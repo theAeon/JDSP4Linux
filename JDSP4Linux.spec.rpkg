@@ -1,0 +1,53 @@
+Name:           {{{ git_name name=jamesdsp }}}
+Version:        {{{ git_version lead=2 }}}
+Release:        1%{?dist}
+ExclusiveArch:  x86_64
+Summary:        An audio effect processor for PipeWire clients
+  
+License:        GPLv3
+URL:            https://github.com/theAeon/JDSP4Linux/
+VCS:            {{{ git_dir_vcs }}}
+Source:         {{{ git_dir_pack }}}
+    
+BuildRequires:  libarchive-devel
+BuildRequires:  qt5-qtbase-devel >= 5.12.8
+BuildRequires:  qt5-qtbase-private-devel
+BuildRequires:  qt5-qtsvg-devel >= 5.12.8
+BuildRequires:  gcc-c++
+BuildRequires:  glibmm24-devel
+BuildRequires:  glib2-devel
+BuildRequires:  pipewire-devel
+BuildRequires:  make
+
+Requires:    pipewire >= 0.3
+Requires:    pipewire-libs
+Requires:    libarchive
+    
+
+%description
+JDSP4Lin
+
+%prep
+{{{ git_dir_setup_macro }}}
+
+%build
+mkdir build
+cd build
+qmake-qt5 ../JDSP4Linux.pro
+make
+
+%install
+install -D -m 755 build/src/jamesdsp %{buildroot}/%{_bindir}/jamesdsp
+install -D -m 644 resources/icons/icon.png %{buildroot}/%{_datadir}/pixmaps/jamesdsp.png
+install -D -m 644 resources/icons/icon.svg %{buildroot}/%{_datadir}/pixmaps/jamesdsp.svg
+install -D -m 755 meta/jamesdsp.desktop %{buildroot}/%{_datadir}/applications/jamesdsp.desktop
+
+%files
+%license LICENSE
+%{_bindir}/jamesdsp
+%{_datadir}/pixmaps/jamesdsp.png
+%{_datadir}/pixmaps/jamesdsp.svg
+%{_datadir}/applications/jamesdsp.desktop
+
+%changelog
+{{{ git_dir_changelog }}}
