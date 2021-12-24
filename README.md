@@ -36,6 +36,19 @@ Linux port developed by <a href="https://github.com/thepbone">@thepbone</a> (<a 
     Feel free to join our <a href="https://t.me/joinchat/FTKC2A2bolHkFAyO-fuPjw">Telegram group</a> for support and updates
 </p>
 
+
+**NOTE: This is not the official repository. Go to [Audio4Linux/JDSP4Linux](https://github.com/Audio4Linux/JDSP4Linux) for non-packaging related issues.**
+
+- Packages maintained by Andrew Robbins - [andrew@robbinsa.me](mailto:andrew@robbinsa.me)
+- CI/CD at Fedora's COPR.&nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;[![Copr build status](https://copr.fedorainfracloud.org/coprs/arrobbins/JDSP4Linux/package/jamesdsp/status_image/last_build.png)](https://copr.fedorainfracloud.org/coprs/arrobbins/JDSP4Linux/package/jamesdsp/)
+- **PIPEWIRE ONLY** - Tested on Fedora 35. Built for Fedora 34/35/Rawhide and OpenSuSE Tumbleweed.
+```
+yum copr enable arrobbins/JDSP4Linux && yum update && yum install jamesdsp
+``` 
+
+
+
+
 ## Features
 
 * Automatic bass boost
