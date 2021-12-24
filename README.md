@@ -37,13 +37,24 @@ Linux port developed by <a href="https://github.com/thepbone">Tim Schneeberger (
     Feel free to join our <a href="https://t.me/joinchat/FTKC2A2bolHkFAyO-fuPjw">Telegram group</a> for support and updates
 </p>
 
-____________
-
 <p align="center">
     <a href="https://crowdin.com/project/jdsp4linux" rel="nofollow"><img style="width:140;height:40px" src="https://badges.crowdin.net/badge/light/crowdin-on-dark.png" srcset="https://badges.crowdin.net/badge/light/crowdin-on-dark.png 1x,https://badges.crowdin.net/badge/light/crowdin-on-dark@2x.png 2x" alt="Crowdin" /></a>
     <br/>
     Please help us to <a href="https://crowdin.com/project/jdsp4linux">translate this app</a> on <a href="https://crowdin.com/project/jdsp4linux">Crowdin</a>!
 </p>
+
+
+**NOTE: This is not the official repository. Go to [Audio4Linux/JDSP4Linux](https://github.com/Audio4Linux/JDSP4Linux) for non-packaging related issues.**
+
+- Packages maintained by Andrew Robbins - [andrew@robbinsa.me](mailto:andrew@robbinsa.me)
+- CI/CD at Fedora's COPR.&nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;[![Copr build status](https://copr.fedorainfracloud.org/coprs/arrobbins/JDSP4Linux/package/jamesdsp/status_image/last_build.png)](https://copr.fedorainfracloud.org/coprs/arrobbins/JDSP4Linux/package/jamesdsp/)
+- **PIPEWIRE ONLY** - Tested on Fedora 35. Built for Fedora 34/35/Rawhide and OpenSuSE Tumbleweed.
+```
+yum copr enable arrobbins/JDSP4Linux && yum update && yum install jamesdsp
+``` 
+
+
+
 
 ## Features
 
