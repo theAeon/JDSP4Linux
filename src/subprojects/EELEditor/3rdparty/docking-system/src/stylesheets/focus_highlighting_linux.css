@@ -11,7 +11,6 @@ ads--CDockContainerWidget ads--CDockSplitter::handle {
 
 ads--CDockAreaWidget {
         background: palette(window);
-        border: 1px solid white;
 }
 
 ads--CDockAreaWidget #tabsMenuButton::menu-indicator {
@@ -33,7 +32,7 @@ ads--CDockWidgetTab[activeTab="true"] {
 }
 
 ads--CDockWidgetTab QLabel {
-        color: palette(dark);
+        color: palette(foreground);
 }
 
 ads--CDockWidgetTab[activeTab="true"] QLabel {

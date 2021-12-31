@@ -1,6 +1,6 @@
 Name:           {{{ git_name name=jamesdsp }}}
 Version:        {{{ git_version lead=2 }}}
-Release:        2%{?dist}
+Release:        1%{?dist}
 ExclusiveArch:  x86_64
 Summary:        An audio effect processor for PipeWire clients
   
@@ -20,8 +20,7 @@ BuildRequires:  pipewire-devel
 BuildRequires:  make
 
 Requires:    pipewire >= 0.3
-Requires:    pipewire-libs
-Requires:    libarchive
+
     
 
 %description

@@ -13,11 +13,16 @@
 #include <DockAreaWidget.h>
 #include <DockWidget.h>
 
+#ifdef HAS_JDSP_DRIVER
+#include <IAudioService.h>
+#endif
+
 class ProjectView;
 class FindReplaceForm;
 class ConsoleOutput;
 class QStackedWidget;
 class EmptyView;
+class VariableWatchWidget;
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class EELEditor; }
@@ -31,6 +36,9 @@ public:
     EELEditor(QWidget *parent = nullptr);
     ~EELEditor();
     void openNewScript(QString path);
+#ifdef HAS_JDSP_DRIVER
+    void attachHost(IAudioService* _host);
+#endif
 
 signals:
     void scriptSaved(QString path);
@@ -55,6 +63,9 @@ private slots:
     void onCurrentFileUpdated(CodeContainer* prev, CodeContainer* code);
     void onBackendRefreshRequired();
 
+protected:
+    void closeEvent(QCloseEvent* ev) override;
+
 private:
     Ui::EELEditor *ui;
 
@@ -69,6 +80,7 @@ private:
     ProjectView* projectView;
     CodeOutline* codeOutline;
     ConsoleOutput* consoleOutput;
+    VariableWatchWidget* variableView;
 
     CustomSymbolProvider* symbolProvider;
     EELHighlighter* highlighter;
@@ -79,6 +91,10 @@ private:
     ads::CDockManager* DockManager;
     ads::CDockAreaWidget* StatusDockArea;
     ads::CDockWidget* TimelineDockWidget;
+
+#ifdef HAS_JDSP_DRIVER
+    IAudioService* audioService = nullptr;
+#endif
 
     void changeSyntaxStyle(QString def);
 };

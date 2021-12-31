@@ -23,6 +23,7 @@
 #include <QStackedWidget>
 #include <QLabel>
 #include <QPushButton>
+#include <QHeaderView>
 
 #include <DockAreaTitleBar.h>
 #include <DockAreaTabBar.h>
@@ -31,8 +32,15 @@
 
 #include <widgets/ActionButton.h>
 #include <widgets/EmptyView.h>
+#include <widgets/VariableWatchWidget.h>
+
+#include <model/VariableItemModel.h>
 
 using namespace ads;
+
+#define SET_DOCK_ICON(dock,icon) \
+    auto* dock##Action = dock->toggleViewAction(); \
+    dock##Action->setIcon(QIcon(icon));
 
 EELEditor::EELEditor(QWidget *parent)
     : QMainWindow(parent)
@@ -48,6 +56,8 @@ EELEditor::EELEditor(QWidget *parent)
     projectView = new ProjectView(this);
     codeOutline = new CodeOutline(this);
     consoleOutput = new ConsoleOutput(loadFallbackFont, this);
+
+    variableView = new VariableWatchWidget(this);
 
     codeView = new QStackedWidget(this);
 
@@ -79,25 +89,42 @@ EELEditor::EELEditor(QWidget *parent)
     projectsDock->setWidget(projectView);
     projectsDock->setMinimumSizeHintMode(CDockWidget::MinimumSizeHintFromDockWidget);
     projectsDock->resize(250, 50);
-    projectsDock->setMinimumSize(200,50);
+    projectsDock->setMinimumSize(200,5);
     projectsDock->setGeometry(0,0,0,400);
-
+    SET_DOCK_ICON(projectsDock,":/icons/ListFolder_16x.svg")
     auto* leftArea = DockManager->addDockWidget(DockWidgetArea::LeftDockWidgetArea, projectsDock);
     ui->menuView->addAction(projectsDock->toggleViewAction());
 
-    projectsDock = new CDockWidget("Code outline");
-    projectsDock->setWidget(codeOutline);
-    projectsDock->setMinimumSizeHintMode(CDockWidget::MinimumSizeHintFromDockWidget);
-    projectsDock->resize(250, 150);
-    projectsDock->setMinimumSize(200,150);
-    DockManager->addDockWidget(DockWidgetArea::BottomDockWidgetArea, projectsDock, leftArea);
-    ui->menuView->addAction(projectsDock->toggleViewAction());
+    auto* outlineDock = new CDockWidget("Code outline");
+    outlineDock->setWidget(codeOutline);
+    outlineDock->setMinimumSizeHintMode(CDockWidget::MinimumSizeHintFromDockWidget);
+    outlineDock->resize(250, 150);
+    outlineDock->setMinimumSize(200,5);
+    SET_DOCK_ICON(outlineDock,":/icons/JSONDocumentOutline_16x.svg")
+    DockManager->addDockWidget(DockWidgetArea::BottomDockWidgetArea, outlineDock, leftArea);
+    ui->menuView->addAction(outlineDock->toggleViewAction());
+
+#ifdef HAS_JDSP_DRIVER
+    auto* variableDock = new CDockWidget("Variable view");
+    variableDock->setWidget(variableView);
+    variableDock->setMinimumSizeHintMode(CDockWidget::MinimumSizeHintFromDockWidget);
+    variableDock->resize(400, 150);
+    variableDock->setMinimumSize(200,5);
+    DockManager->addDockWidget(DockWidgetArea::RightDockWidgetArea, variableDock);
+    variableDock->toggleView(false);
+    SET_DOCK_ICON(variableDock,":/icons/DataPreview.svg")
+    ui->toolBar->addAction(variableDock->toggleViewAction());
+    ui->menuView->addAction(variableDock->toggleViewAction());
+
+    connect(variableDock, &CDockWidget::viewToggled, variableView, &VariableWatchWidget::setWatching);
+#endif
 
     auto* consoleDock = new CDockWidget("Console output");
     consoleDock->setWidget(consoleOutput);
     consoleDock->setMinimumSizeHintMode(CDockWidget::MinimumSizeHintFromDockWidget);
     consoleDock->resize(250, 150);
-    consoleDock->setMinimumSize(200,150);
+    consoleDock->setMinimumSize(50,150);
+    SET_DOCK_ICON(consoleDock,":/icons/Console_16x.svg")
     DockManager->addDockWidget(DockWidgetArea::BottomDockWidgetArea, consoleDock);
     ui->menuView->addAction(consoleDock->toggleViewAction());
 
@@ -163,6 +190,20 @@ EELEditor::~EELEditor()
 void EELEditor::openNewScript(QString path){
     projectView->addFile(path);
 }
+
+#ifdef HAS_JDSP_DRIVER
+void EELEditor::attachHost(IAudioService *_host)
+{
+    audioService = _host;
+
+    connect(audioService, &IAudioService::eelCompilationStarted, this, &EELEditor::onCompilerStarted);
+    connect(audioService, &IAudioService::eelCompilationFinished, this, &EELEditor::onCompilerFinished);
+    connect(audioService, &IAudioService::eelOutputReceived, this, &EELEditor::onConsoleOutputReceived);
+    connect(ui->actionFreeze, &QAction::toggled, [this](bool state){ audioService->host()->freezeLiveprogExecution(state); });
+
+    this->variableView->attachHost(audioService);
+}
+#endif
 
 void EELEditor::onCompilerStarted(const QString &scriptName)
 {
@@ -304,6 +345,15 @@ void EELEditor::onBackendRefreshRequired()
 
     highlighter->setErrorLine(-1);
     highlighter->rehighlight();
+}
+
+void EELEditor::closeEvent(QCloseEvent *ev)
+{
+    /* Unfreeze on close */
+    ui->actionFreeze->setChecked(false);
+    audioService->host()->freezeLiveprogExecution(false);
+
+    QMainWindow::closeEvent(ev);
 }
 
 void EELEditor::onIsCodeLoadedChanged(bool isLoaded)

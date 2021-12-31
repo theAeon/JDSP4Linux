@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>803</width>
-    <height>562</height>
+    <width>828</width>
+    <height>692</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -19,8 +19,8 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>803</width>
-     <height>20</height>
+     <width>828</width>
+     <height>19</height>
     </rect>
    </property>
    <property name="defaultUp">
@@ -115,6 +115,7 @@
    <addaction name="actionRedo"/>
    <addaction name="separator"/>
    <addaction name="actionRun_code"/>
+   <addaction name="actionFreeze"/>
   </widget>
   <action name="actionOpen_file">
    <property name="icon">
@@ -207,14 +208,25 @@
    </property>
   </action>
   <action name="actionGo_to_line">
+   <property name="icon">
+    <iconset resource="editorresources.qrc">
+     <normaloff>:/icons/GoToCurrentLine_16x.svg</normaloff>:/icons/GoToCurrentLine_16x.svg</iconset>
+   </property>
    <property name="text">
-    <string>Go to Line...</string>
+    <string>Go to line...</string>
+   </property>
+   <property name="toolTip">
+    <string>Go to line</string>
    </property>
    <property name="shortcut">
     <string>Ctrl+L</string>
    </property>
   </action>
   <action name="actionJump_to_function">
+   <property name="icon">
+    <iconset resource="editorresources.qrc">
+     <normaloff>:/icons/GoToMethod_16x.svg</normaloff>:/icons/GoToMethod_16x.svg</iconset>
+   </property>
    <property name="text">
     <string>Jump to function...</string>
    </property>
@@ -291,6 +303,24 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+N</string>
+   </property>
+  </action>
+  <action name="actionFreeze">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="icon">
+    <iconset resource="editorresources.qrc">
+     <normaloff>:/icons/RunPause_16x.svg</normaloff>:/icons/RunPause_16x.svg</iconset>
+   </property>
+   <property name="text">
+    <string>Freeze</string>
+   </property>
+   <property name="toolTip">
+    <string>Freeze</string>
+   </property>
+   <property name="shortcut">
+    <string>F6</string>
    </property>
   </action>
  </widget>
