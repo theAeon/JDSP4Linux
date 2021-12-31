@@ -21,15 +21,17 @@ public:
 
 public slots:
     virtual void update(DspConfig* config) = 0;
-    virtual void reloadLiveprog() = 0;
+
     virtual void reloadService() = 0;
 
     virtual IAppManager* appManager() = 0;
+    virtual DspHost* host() = 0;
 
     virtual std::vector<IOutputDevice> sinkDevices() = 0;
     virtual DspStatus status() = 0;
 
-    virtual void enumerateLiveprogVariables() = 0;
+    void reloadLiveprog();
+    void enumerateLiveprogVariables();
 
     void handleMessage(DspHost::Message msg, std::any arg);
 
@@ -37,11 +39,22 @@ signals:
     void eelCompilationStarted(const QString& scriptName);
     void eelCompilationFinished(int ret, const QString& retMsg, const QString& msg, const QString& scriptName, float initMs);
     void eelOutputReceived(const QString& output);
-    void eelVariablesEnumerated(const std::list<EelVariable>& vars);
+    void eelVariablesEnumerated(const std::vector<EelVariable>& vars);
     void convolverInfoChanged(const ConvolverInfoEventArgs& args);
     void outputDeviceChanged(const QString& deviceName, const QString& deviceId);
 
 };
+
+inline void IAudioService::reloadLiveprog()
+{
+    host()->reloadLiveprog();
+}
+
+inline void IAudioService::enumerateLiveprogVariables()
+{
+    auto vars = this->host()->enumEelVariables();
+    emit eelVariablesEnumerated(vars);
+}
 
 inline void IAudioService::handleMessage(DspHost::Message msg, std::any value)
 {

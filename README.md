@@ -137,6 +137,7 @@ If you don't know which version fits your Linux setup, go to the [PipeWire vs Pu
 
 * [Debian/Ubuntu (PPA)](#debianubuntu)
 * [Arch Linux (AUR)](#arch)
+* [Fedora/openSUSE](#fedoraopensuse)
 * [Build from sources](#build-from-sources)
 
 ### Debian/Ubuntu
@@ -197,6 +198,18 @@ For **PulseAudio clients** only:
    ```
    yay -S jamesdsp-pulse-git
    ```
+   
+### Fedora/openSUSE
+
+Package maintained by [@theAeon](https://github.com/theAeon) on [Fedora COPR](https://copr.fedorainfracloud.org/coprs/arrobbins/JDSP4Linux/).
+Built for Fedora 34/35/Rawhide and OpenSUSE Tumbleweed.
+
+For **PipeWire clients** only:
+```
+yum copr enable arrobbins/JDSP4Linux && yum update && yum install jamesdsp
+```
+
+If you are still using PulseAudio with your Fedora/openSUSE installation, refer to the '[Build from sources](#build-from-sources)' section below instead.
 
 ### Build from sources
 
@@ -325,6 +338,7 @@ sudo wget -O /usr/share/pixmaps/jamesdsp.png https://raw.githubusercontent.com/A
 
 * [James Fung](https://github.com/james34602) - Developer of the core library ['libjamesdsp'](https://github.com/james34602/JamesDSPManager/tree/master/Main)
 * [yochananmarqos](https://github.com/yochananmarqos) - AUR packages
+* [theAeon](https://github.com/theAeon) - RPM packages
 
 ##### Other credits
 * PipeWire implementation based on [EasyEffects](https://github.com/wwmm/EasyEffects)

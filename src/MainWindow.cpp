@@ -13,6 +13,7 @@
 #include "config/ConfigContainer.h"
 #include "config/ConfigIO.h"
 #include "config/DspConfig.h"
+#include "data/AssetManager.h"
 #include "data/EelParser.h"
 #include "data/model/VdcDatabaseModel.h"
 #include "data/PresetManager.h"
@@ -23,7 +24,6 @@
 #include "interface/fragment/PresetFragment.h"
 #include "interface/fragment/SettingsFragment.h"
 #include "interface/fragment/StatusFragment.h"
-#include "interface/LiquidEqualizerWidget.h"
 #include "interface/QMessageOverlay.h"
 #include "interface/TrayIcon.h"
 #include "utils/Common.h"
@@ -39,9 +39,10 @@
 #include <Animation/Animation.h>
 #include <eeleditor.h>
 #include <AeqSelector.h>
+#include <LiquidEqualizerWidget.h>
+#include <utils/DesktopServices.h>
 //#include <spectrograph.h>
 
-#include <QDesktopServices>
 #include <QButtonGroup>
 #include <QClipboard>
 #include <QDebug>
@@ -52,40 +53,14 @@
 #include <QMessageBox>
 #include <QWhatsThis>
 
-#define STR_(x) #x
-#define STR(x) STR_(x)
-
 using namespace std;
 
-MainWindow::MainWindow(QString  exepath,
-                       bool     statupInTray,
-                       bool     allowMultipleInst,
+MainWindow::MainWindow(bool     statupInTray,
                        QWidget *parent) :
     QMainWindow(parent),
     ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
-
-    // Prepare logger
-    {
-        Log::clear();
-#ifdef USE_PULSEAUDIO
-        QString flavor = " (Pulseaudio flavor)";
-#else
-        QString flavor = " (Pipewire flavor)";
-#endif
-        Log::information("Application version: " + QString(STR(APP_VERSION)) + flavor);
-    }
-
-    // Check if another instance is already running and switch to it if that's the case
-    {
-        _singleInstance = new SingleInstanceMonitor(this);
-        if (!_singleInstance->isServiceReady() && !allowMultipleInst)
-        {
-            _singleInstance->handover();
-            return;
-        }
-    }
 
     // Prepare audio subsystem
     {
@@ -111,6 +86,20 @@ MainWindow::MainWindow(QString  exepath,
         connect(&DspConfig::instance(), &DspConfig::updatedExternally, _audioService, &IAudioService::update);
     }
 
+    // Allocate resources
+    {
+        _startupInTraySwitch = statupInTray;
+
+        _styleHelper         = new StyleHelper(this);
+        _eelEditor           = new EELEditor(this);
+        _trayIcon            = new TrayIcon(this);
+
+        _appMgrFragment = new FragmentHost<AppManagerFragment*>(new AppManagerFragment(_audioService->appManager(), this), WAF::BottomSide, this);
+        _statusFragment = new FragmentHost<StatusFragment*>(new StatusFragment(this), WAF::BottomSide, this);
+        _presetFragment = new FragmentHost<PresetFragment*>(new PresetFragment(_audioService, this), WAF::LeftSide, this);
+        _settingsFragment = new FragmentHost<SettingsFragment*>(new SettingsFragment(_trayIcon, _audioService, this), WAF::BottomSide, this);
+    }
+
     // Prepare base UI
     {
         Log::information("============ Initializing user interface ============");
@@ -124,7 +113,7 @@ MainWindow::MainWindow(QString  exepath,
             restoreGeometry(geometry);
         }
 
-        // Prepare equalizer UI
+        // Equalizer
         QButtonGroup eq_mode;
         eq_mode.addButton(ui->eq_r_fixed);
         eq_mode.addButton(ui->eq_r_flex);
@@ -132,7 +121,6 @@ MainWindow::MainWindow(QString  exepath,
         ui->eq_dyn_widget->setSidebarHidden(true);
         ui->eq_dyn_widget->set15BandFreeMode(true);
 
-        // Set default zoom for dynamic EQ widget
         ConfigContainer pref;
         pref.setValue("scrollX", 160);
         pref.setValue("scrollY", 311);
@@ -140,30 +128,18 @@ MainWindow::MainWindow(QString  exepath,
         pref.setValue("zoomY",   1.651);
         ui->eq_dyn_widget->loadPreferences(pref.getConfigMap());
 
-        // Clock
-        _refreshTick = new QTimer(this);
-        connect(_refreshTick, &QTimer::timeout, this, &MainWindow::fireTimerSignal);
-        _refreshTick->start(1000);
-
-        connect(&PresetManager::instance(), &PresetManager::wantsToWriteConfig, this, &MainWindow::applyConfig);
+        // GraphicEQ
+        ui->graphicEq->setEnableSwitchVisible(true);
+        ui->graphicEq->setAutoEqAvailable(true);
     }
 
     // Allocate pointers and init important variables
     {
-        AppConfig::instance().set(AppConfig::ExecutablePath, exepath);
-
-        _startupInTraySwitch = statupInTray;
-
-        _styleHelper         = new StyleHelper(this);
-        _eelEditor           = new EELEditor(this);
-
+        connect(&PresetManager::instance(), &PresetManager::wantsToWriteConfig, this, &MainWindow::applyConfig);
         connect(&PresetManager::instance(), &PresetManager::presetAutoloaded, this, [this](const QString& device){
             ui->info->setAnimatedText(QString("%1 connected - Preset loaded automatically").arg(device), true);
         });
 
-        connect(_audioService, &IAudioService::eelCompilationStarted, _eelEditor, &EELEditor::onCompilerStarted);
-        connect(_audioService, &IAudioService::eelCompilationFinished, _eelEditor, &EELEditor::onCompilerFinished);
-        connect(_audioService, &IAudioService::eelOutputReceived, _eelEditor, &EELEditor::onConsoleOutputReceived);
         connect(_audioService, &IAudioService::outputDeviceChanged, &PresetManager::instance(), &PresetManager::onOutputDeviceChanged);
 
         // Convolver file info
@@ -172,13 +148,8 @@ MainWindow::MainWindow(QString  exepath,
         onConvolverInfoChanged(ciArgs);
         connect(_audioService, &IAudioService::convolverInfoChanged, this, &MainWindow::onConvolverInfoChanged);
 
-        // TODO
-        //        QTimer *timer = new QTimer(this);
-        //        connect(timer, SIGNAL(timeout()), _audioService, SLOT(enumerateLiveprogVariables()));
-        //        timer->start(200);
-
-        connect(_eelEditor, &EELEditor::executionRequested, [this](QString path){
-            bool isSameFile = path == ui->liveprog->currentLiveprog();
+       _eelEditor->attachHost(_audioService);
+       connect(_eelEditor, &EELEditor::executionRequested, [this](QString path){
             if (QFileInfo::exists(path) && QFileInfo(path).isFile())
             {
                 ui->liveprog->setCurrentLiveprog(path);
@@ -192,7 +163,7 @@ MainWindow::MainWindow(QString  exepath,
 
             applyConfig();
 
-            if(isSameFile)
+            if(path == ui->liveprog->currentLiveprog())
             {
                 _audioService->reloadLiveprog();
             }
@@ -201,9 +172,8 @@ MainWindow::MainWindow(QString  exepath,
 
     // Prepare tray icon
     {
-        _trayIcon = new TrayIcon(this);
-        connect(_trayIcon,               &TrayIcon::iconActivated,    this,     &MainWindow::onTrayIconActivated);
-        connect(_trayIcon,               &TrayIcon::loadReverbPreset, [this](const QString &preset)
+        connect(_trayIcon, &TrayIcon::iconActivated, this, &MainWindow::onTrayIconActivated);
+        connect(_trayIcon, &TrayIcon::loadReverbPreset, this, [this](const QString &preset)
         {
             if(preset == "off"){
                 ui->reverb->setChecked(false);
@@ -216,7 +186,7 @@ MainWindow::MainWindow(QString  exepath,
             onReverbPresetUpdated();
         });
         connect(_trayIcon, &TrayIcon::restart, this, &MainWindow::onRelinkRequested);
-        connect(_trayIcon, &TrayIcon::loadEqPreset, [this](const QString &preset)
+        connect(_trayIcon, &TrayIcon::loadEqPreset, this, [this](const QString &preset)
         {
             ui->enable_eq->setChecked(true);
 
@@ -230,7 +200,7 @@ MainWindow::MainWindow(QString  exepath,
                 onEqPresetUpdated();
             }
         });
-        connect(_trayIcon, &TrayIcon::loadCrossfeedPreset, [this](int preset)
+        connect(_trayIcon, &TrayIcon::loadCrossfeedPreset, this, [this](int preset)
         {
             if(preset == -1)
             {
@@ -244,9 +214,9 @@ MainWindow::MainWindow(QString  exepath,
             ui->bs2b->setChecked(true);
             onBs2bPresetUpdated();
         });
-        connect(_trayIcon, &TrayIcon::loadIrs, [this](const QString &irs)
+        connect(_trayIcon, &TrayIcon::loadIrs, this, [this](const QString &irs)
         {
-            _currentImpuleResponse = irs;
+            _currentImpulseResponse = irs;
             ui->conv_enable->setChecked(true);
             determineIrsSelection();
             applyConfig();
@@ -258,20 +228,12 @@ MainWindow::MainWindow(QString  exepath,
         _trayIcon->setTrayVisible(AppConfig::instance().get<bool>(AppConfig::TrayIconEnabled) || _startupInTraySwitch);
     }
 
-    // Load config and initialize less important stuff
+    // Load config and connect fragment signals
     {
-        //initializeSpectrum();
-
         connect(&DspConfig::instance(), &DspConfig::configBuffered, this, &MainWindow::loadConfig);
         DspConfig::instance().load();
 
-        _appMgrFragment = new FragmentHost<AppManagerFragment*>(new AppManagerFragment(_audioService->appManager(), this), WAF::BottomSide, this);
-        _statusFragment = new FragmentHost<StatusFragment*>(new StatusFragment(this), WAF::BottomSide, this);
-        _presetFragment = new FragmentHost<PresetFragment*>(new PresetFragment(_audioService, this), WAF::LeftSide, this);
-        _settingsFragment = new FragmentHost<SettingsFragment*>(new SettingsFragment(_trayIcon, _audioService, this), WAF::BottomSide, this);
-
         connect(_settingsFragment->fragment(), &SettingsFragment::launchSetupWizard,       this, &MainWindow::launchFirstRunSetup);
-        connect(_settingsFragment->fragment(), &SettingsFragment::requestEelScriptExtract, this, &MainWindow::extractDefaultEelScripts);
         connect(_settingsFragment->fragment(), &SettingsFragment::reopenSettings, _settingsFragment, &FragmentHost<SettingsFragment*>::slideOutIn);
         connect(_styleHelper, &StyleHelper::iconColorChanged, _settingsFragment->fragment(), &SettingsFragment::updateButtonStyle);
     }
@@ -289,17 +251,20 @@ MainWindow::MainWindow(QString  exepath,
         ui->toolButton->setIconSize(QSize(16,16));
         ui->disableFX->setIconSize(QSize(16,16));
 
+        // Attach menu
         QMenu *menu = new QMenu();
         menu->addAction(tr("Apps"), _appMgrFragment, &FragmentHost<AppManagerFragment*>::slideIn);
         menu->addAction(tr("Driver status"), _statusFragment, [this](){
             _statusFragment->fragment()->updateStatus(_audioService->status());
             _statusFragment->slideIn();
         });
-        menu->addAction(tr("Relink audio pipeline"),   this, SLOT(onRelinkRequested()));
+        menu->addAction(tr("Relink audio pipeline"), this, SLOT(onRelinkRequested()));
         menu->addSeparator();
         menu->addAction(tr("Reset to defaults"), this, SLOT(onResetRequested()));
         menu->addAction(tr("Load from file"), this, SLOT(loadExternalFile()));
-        menu->addAction(tr("Save to file"),   this, SLOT(saveExternalFile()));
+        menu->addAction(tr("Save to file"), this, SLOT(saveExternalFile()));
+        menu->addSeparator();
+        menu->addAction(tr("Open LiveprogIDE"), _eelEditor, &EELEditor::show);
         menu->addSeparator();
         menu->addAction(tr("What's this..."), this, []()
         {
@@ -335,15 +300,26 @@ MainWindow::MainWindow(QString  exepath,
     {
         if (AppConfig::instance().get<bool>(AppConfig::LiveprogAutoExtract))
         {
-            extractDefaultEelScripts(false, false);
+            AssetManager::instance().extractAll();
         }
     }
 
     // Setup file selectors
     {
-        ui->ddc_files->setCurrentDirectory(AppConfig::instance().getDDCPath());
+        // DDC
+        ui->ddc_files->setCurrentDirectory(AppConfig::instance().getVdcPath());
         ui->ddc_files->setFileTypes(QStringList("*.vdc"));
+        connect(ui->ddc_files,  &FileSelectionWidget::fileChanged, this, &MainWindow::setVdcFile);
 
+        ui->ddcTable->setModel(new VdcDatabaseModel(ui->ddcTable));
+        ui->ddcTable->setColumnHidden(2, true);
+        ui->ddcTable->setColumnHidden(3, true);
+        ui->ddcTable->setColumnHidden(4, true);
+        ui->ddcTable->resizeColumnsToContents();
+        determineVdcSelection();
+
+        // Convolver
+        determineIrsSelection();
         ui->conv_files->setCurrentDirectory(AppConfig::instance().getIrsPath());
         ui->conv_files->setFileTypes(QStringList(std::initializer_list<QString>({"*.irs", "*.wav", "*.flac"})));
         ui->conv_files->setBookmarkDirectory(QDir(AppConfig::instance().getPath("irs_favorites")));
@@ -353,31 +329,16 @@ MainWindow::MainWindow(QString  exepath,
         ui->conv_fav->setFileActionsVisible(true);
         ui->conv_fav->setNavigationBarVisible(false);
 
-        connect(ui->ddc_files, &FileSelectionWidget::fileChanged, this, &MainWindow::setVdcFile);
         connect(ui->conv_files, &FileSelectionWidget::fileChanged, this, &MainWindow::setIrsFile);
-        connect(ui->conv_fav, &FileSelectionWidget::fileChanged, this, &MainWindow::setIrsFile);
-
-        connect(ui->conv_files, &FileSelectionWidget::bookmarkAdded, ui->conv_fav, &FileSelectionWidget::enumerateFiles);
-
+        connect(ui->conv_fav,   &FileSelectionWidget::fileChanged, this, &MainWindow::setIrsFile);
         connect(ui->conv_files, &FileSelectionWidget::fileChanged, ui->conv_fav, &FileSelectionWidget::clearCurrentFile);
-        connect(ui->conv_fav, &FileSelectionWidget::fileChanged, ui->conv_files, &FileSelectionWidget::clearCurrentFile);
-
-        // DDC
-        ui->ddcTable->setModel(new VdcDatabaseModel(ui->ddcTable));
-        ui->ddcTable->setColumnHidden(2, true);
-        ui->ddcTable->setColumnHidden(3, true);
-        ui->ddcTable->setColumnHidden(4, true);
-        ui->ddcTable->resizeColumnsToContents();
-
-        determineVdcSelection();
-
-        // Convolver
-        determineIrsSelection();
+        connect(ui->conv_fav,   &FileSelectionWidget::fileChanged, ui->conv_files, &FileSelectionWidget::clearCurrentFile);
+        connect(ui->conv_files, &FileSelectionWidget::bookmarkAdded, ui->conv_fav, &FileSelectionWidget::enumerateFiles);
 
         // Liveprog
         ui->liveprog->coupleIDE(_eelEditor);
         connect(ui->liveprog, &LiveprogSelectionWidget::liveprogReloadRequested, _audioService, &IAudioService::reloadLiveprog);
-        connect(ui->liveprog, &LiveprogSelectionWidget::unitLabelUpdateRequested, this, &MainWindow::updateUnitLabel);
+        connect(ui->liveprog, &LiveprogSelectionWidget::unitLabelUpdateRequested, ui->info, qOverload<const QString&>(&FadingLabel::setAnimatedText));
     }
 
     // Populate preset lists
@@ -388,13 +349,10 @@ MainWindow::MainWindow(QString  exepath,
         }
     }
 
-    // Connect UI signals
+    // Connect remaining signals
     {
         connectActions();
-    }
 
-    // Connect non-UI signals (DBus/ACW/...)
-    {
         connect(&AppConfig::instance(), &AppConfig::themeChanged, this, [this]()
         {
             _styleHelper->SetStyle();
@@ -402,29 +360,13 @@ MainWindow::MainWindow(QString  exepath,
             ui->tabhost->setStyleSheet(QString("QWidget#tabHostPage1,QWidget#tabHostPage2,QWidget#tabHostPage3,QWidget#tabHostPage4,QWidget#tabHostPage5,QWidget#tabHostPage6,QWidget#tabHostPage7{background-color: %1;}").arg(qApp->palette().window().color().lighter().name()));
             ui->tabbar->redrawTabBar();
             ui->eq_widget->setAccentColor(palette().highlight().color());
-            _spectrumReloadSignalQueued = true;
         });
 
-        connect(&AppConfig::instance(), &AppConfig::updated, this, [this](const AppConfig::Key& key, const QVariant& value)
-        {
-            switch(key)
-            {
-            case AppConfig::EqualizerShowHandles:
-                ui->eq_widget->setAlwaysDrawHandles(value.toBool());
-                break;
-            case AppConfig::TrayIconEnabled:
-                _trayIcon->setTrayVisible(value.toBool());
-                break;
-            default:
-                break;
-            }
-
-        });
+        connect(&AppConfig::instance(), &AppConfig::updated, this, &MainWindow::onAppConfigUpdated);
     }
 
-    // Lateinit less important UI stuff and setup tabbar
+    // Tabs and other UI related things
     {
-        //toggleSpectrum(AppConfig::instance().get<bool>(AppConfig::SpectrumEnabled), true);
         restoreGraphicEQView();
         ui->eq_widget->setAlwaysDrawHandles(AppConfig::instance().get<bool>(AppConfig::EqualizerShowHandles));
 
@@ -443,14 +385,11 @@ MainWindow::MainWindow(QString  exepath,
         ui->tabhost->setStyleSheet(QString("QWidget#tabHostPage1,QWidget#tabHostPage2,QWidget#tabHostPage3,QWidget#tabHostPage4,QWidget#tabHostPage5,QWidget#tabHostPage6,QWidget#tabHostPage7,QWidget#tabHostPage8,QWidget#tabHostPage9{background-color: %1;}").arg(qApp->palette().window().color().lighter().name()));
         ui->tabbar->redrawTabBar();
 
+        installUnitData();
+
         if (debuggerIsAttached() || system("which ddctoolbox > /dev/null 2>&1")) { // Workaround: do not call system() when GDB is attached
-            connect(ui->ddctoolbox_install, &QAbstractButton::clicked, []{
-                int ret = system("xdg-open https://github.com/thepbone/DDCToolbox"); // QDesktopServices::openUrl broken on some KDE systems with Qt 5.15
-                if(ret > 0)
-                {
-                    Log::error("MainWindow: xdg-open failed. Trying gio instead.");
-                    system("gio open https://github.com/thepbone/DDCToolbox");
-                }
+            connect(ui->ddctoolbox_install, &QAbstractButton::clicked, [this]{
+                DesktopServices::openUrl("https://github.com/thepbone/DDCToolbox", this);
             });
         } else {
             ui->ddctoolbox_install->setText("Launch application");
@@ -478,16 +417,6 @@ MainWindow::~MainWindow()
         delete _audioService;
     }
     delete ui;
-}
-
-void MainWindow::fireTimerSignal()
-{
-    if (_spectrumReloadSignalQueued)
-    {
-        //restartSpectrum();
-    }
-
-    _spectrumReloadSignalQueued = false;
 }
 
 // Overrides
@@ -560,6 +489,21 @@ void MainWindow::onConvolverInfoChanged(const ConvolverInfoEventArgs& args)
     ui->ir_details_frames->setText(QString::number(args.frames));
 }
 
+void MainWindow::onAppConfigUpdated(const AppConfig::Key &key, const QVariant &value)
+{
+    switch(key)
+    {
+        case AppConfig::EqualizerShowHandles:
+            ui->eq_widget->setAlwaysDrawHandles(value.toBool());
+            break;
+        case AppConfig::TrayIconEnabled:
+            _trayIcon->setTrayVisible(value.toBool());
+            break;
+        default:
+            break;
+    }
+}
+
 // Fragment handler
 void MainWindow::onFragmentRequested()
 {
@@ -596,12 +540,9 @@ void MainWindow::onRelinkRequested()
 {
     _audioService->reloadService();
     DspConfig::instance().commit();
-
-    // TODO
-    _spectrumReloadSignalQueued = true;
 }
 
-// ---User preset management
+// User preset management
 void MainWindow::loadExternalFile()
 {
     QString filename = QFileDialog::getOpenFileName(this, tr("Load custom audio.conf"), "", "JamesDSP Linux configuration (*.conf)");
@@ -632,7 +573,7 @@ void MainWindow::saveExternalFile()
     PresetManager::instance().saveToPath(filename);
 }
 
-// ---Config IO
+// Load/save
 void MainWindow::loadConfig()
 {
     _blockApply = true;
@@ -691,14 +632,14 @@ void MainWindow::loadConfig()
     ui->graphicEq->load(chopDoubleQuotes(DspConfig::instance().get<QString>(DspConfig::graphiceq_param)));
 
     ui->ddc_enable->setChecked(DspConfig::instance().get<bool>(DspConfig::ddc_enable));
-    _currentVdc      = chopDoubleQuotes(DspConfig::instance().get<QString>(DspConfig::ddc_file));
+    _currentVdc = chopDoubleQuotes(DspConfig::instance().get<QString>(DspConfig::ddc_file));
 
     ui->liveprog->setActive(DspConfig::instance().get<bool>(DspConfig::liveprog_enable));
     ui->liveprog->setCurrentLiveprog(chopDoubleQuotes(DspConfig::instance().get<QString>(DspConfig::liveprog_file)));
 
     ui->conv_enable->setChecked(DspConfig::instance().get<bool>(DspConfig::convolver_enable));
     ui->conv_ir_opt->setCurrentIndex(DspConfig::instance().get<int>(DspConfig::convolver_optimization_mode));
-    _currentImpuleResponse                 = chopDoubleQuotes(DspConfig::instance().get<QString>(DspConfig::convolver_file));
+    _currentImpulseResponse = chopDoubleQuotes(DspConfig::instance().get<QString>(DspConfig::convolver_file));
     _currentConvWaveformEdit = chopDoubleQuotes(DspConfig::instance().get<QString>(DspConfig::convolver_waveform_edit));
 
     ui->enable_eq->setChecked(DspConfig::instance().get<bool>(DspConfig::tone_enable));
@@ -707,7 +648,7 @@ void MainWindow::loadConfig()
 
     // Parse EQ String to QMap
     QString rawEqString = chopFirstLastChar(DspConfig::instance().get<QString>(DspConfig::tone_eq));
-    bool    isOldFormat = rawEqString.split(";").count() == 15;
+    bool isOldFormat = rawEqString.split(";").count() == 15;
 
     if (isOldFormat)
     {
@@ -796,8 +737,6 @@ void MainWindow::loadConfig()
         ui->eq_dyn_widget->loadMap(eqData);
     }
 
-    updateAllUnitLabels();
-
     determineEqPresetName();
     determineIrsSelection();
     determineVdcSelection();
@@ -828,7 +767,7 @@ void MainWindow::applyConfig()
 
     DspConfig::instance().set(DspConfig::convolver_enable,           QVariant(ui->conv_enable->isChecked()));
     DspConfig::instance().set(DspConfig::convolver_optimization_mode,QVariant(ui->conv_ir_opt->currentIndex()));
-    DspConfig::instance().set(DspConfig::convolver_file,             QVariant("\"" + _currentImpuleResponse + "\""));
+    DspConfig::instance().set(DspConfig::convolver_file,             QVariant("\"" + _currentImpulseResponse + "\""));
     DspConfig::instance().set(DspConfig::convolver_waveform_edit,    QVariant("\"" + _currentConvWaveformEdit + "\""));
 
     DspConfig::instance().set(DspConfig::compression_enable,         QVariant(ui->enable_comp->isChecked()));
@@ -908,7 +847,7 @@ void MainWindow::applyConfig()
     saveGraphicEQView();
 }
 
-// ---Predefined Presets
+// Predefined presets
 void MainWindow::onEqPresetUpdated()
 {
     if (ui->eqpreset->currentText() == "Custom" || _blockApply)
@@ -937,7 +876,6 @@ void MainWindow::onBs2bPresetUpdated()
 
     const auto index = PresetProvider::BS2B::lookupPreset(ui->crossfeed_mode->currentText());
 
-    _blockApply = true;
     switch (index)
     {
     case 0: // BS2B weak
@@ -950,13 +888,8 @@ void MainWindow::onBs2bPresetUpdated()
         break;
     }
 
-    // FIXME remove this vvv
-    ui->info->setAnimatedText("'" + ui->crossfeed_mode->currentText() + "' has been selected", true);
-
     ui->bs2b_custom_box->setEnabled(index == 99);
-    _blockApply = false;
 
-    updateAllUnitLabels();
     applyConfig();
 }
 
@@ -968,7 +901,6 @@ void MainWindow::onReverbPresetUpdated()
     }
 
     const auto data = PresetProvider::Reverb::lookupPreset(ui->roompresets->currentIndex());
-    _blockApply = true;
     ui->rev_osf->setValueA(data.osf);
     ui->rev_era->setValueA((int) (data.p1 * 100));
     ui->rev_finalwet->setValueA((int) (data.p2 * 10));
@@ -986,146 +918,39 @@ void MainWindow::onReverbPresetUpdated()
     ui->rev_lco->setValueA((int) data.p14);
     ui->rev_decay->setValueA((int) (data.p15 * 100));
     ui->rev_delay->setValueA((int) (data.p16 * 10));
-    updateAllUnitLabels();
-    _blockApply = false;
 
     applyConfig();
 }
 
-// ---Status
-void MainWindow::updateUnitLabel(int   d,
-                                 QObject *alt)
+// Status
+void MainWindow::installUnitData()
 {
-    if (_blockApply && alt == nullptr)
-    {
-        return; // Skip if blockapply-flag is set (when setting presets, ...)
-    }
+    ui->rev_width->setProperty("unit", "%");
+    ui->rev_osf->setProperty("unit", "x");
 
-    QObject *obj;
+    QList<QAnimatedSlider*> div100({ui->rev_era, ui->rev_erf, ui->rev_erw, ui->rev_width, ui->rev_bass, ui->rev_spin, ui->rev_wander, ui->rev_decay,
+                                    ui->analog_tubedrive});
 
-    if (alt == nullptr)
-    {
-        obj = sender();
-    }
-    else
-    {
-        obj = alt;
-    }
+    QList<QAnimatedSlider*> div10({ui->bs2b_feed, ui->rev_delay, ui->rev_wet, ui->rev_finalwet, ui->rev_finaldry, ui->rev_width});
 
-    QString pre  = "";
-    QString post = "";
+    QList<QAnimatedSlider*> unitDecibel({ui->bs2b_feed, ui->rev_wet, ui->rev_finalwet, ui->rev_finaldry, ui->analog_tubedrive, ui->postgain, ui->bass_maxgain});
+    QList<QAnimatedSlider*> unitMs({ui->rev_delay, ui->comp_maxattack, ui->comp_maxrelease, ui->limrelease});
+    QList<QAnimatedSlider*> unitHz({ui->bs2b_fcut, ui->rev_lcb, ui->rev_lcd, ui->rev_lci, ui->rev_lco});
 
-    if (obj == ui->rev_width)
-    {
-        updateTooltipLabelUnit(obj, QString::number((double) d) + "%", alt == nullptr);
-    }
-    else if (obj == ui->bs2b_feed)
-    {
-        updateTooltipLabelUnit(obj, QString::number((double) d / 10) + "dB", alt == nullptr);
-    }
-    else if (obj == ui->analog_tubedrive)
-    {
-        updateTooltipLabelUnit(obj, QString::number((double) d / 100) + "dB", alt == nullptr);
-    }
-    else if (obj == ui->rev_decay)
-    {
-        updateTooltipLabelUnit(obj, QString::number((double) d / 100), alt == nullptr);
-    }
-    else if (obj == ui->rev_delay)
-    {
-        updateTooltipLabelUnit(obj, QString::number((double) d / 10) + "ms", alt == nullptr);
-    }
-    else if (obj == ui->rev_wet || obj == ui->rev_finalwet || obj == ui->rev_finaldry)
-    {
-        updateTooltipLabelUnit(obj, QString::number((double) d / 10) + "dB", alt == nullptr);
-    }
-    else if (obj == ui->rev_era || obj == ui->rev_erf || obj == ui->rev_erw
-             || obj == ui->rev_width || obj == ui->rev_bass || obj == ui->rev_spin
-             || obj == ui->rev_wander)
-    {
-        updateTooltipLabelUnit(obj, QString::number((double) d / 100), alt == nullptr);
-    }
-    else if (obj == ui->eqfiltertype || obj == ui->eqinterpolator || obj == ui->conv_ir_opt)
-    {
-        // Ignore these UI elements
-    }
-    else if(obj->property("isCustomEELProperty").toBool())
-    {
-        if (obj->property("handleAsInt").toBool())
-        {
-            updateTooltipLabelUnit(obj, QString::number((int) d / 100), true);
-        }
-        else
-        {
-            updateTooltipLabelUnit(obj, QString::number((double) d / 100), true);
-        }
-    }
+    foreach(auto w, div100)
+        w->setProperty("divisor", 100);
+    foreach(auto w, div10)
+        w->setProperty("divisor", 10);
 
-    else
-    {
-        if (obj == ui->postgain)
-        {
-            post = "dB";
-        }
-        else if (obj == ui->comp_maxattack || obj == ui->comp_maxrelease || obj == ui->limrelease)
-        {
-            post = "ms";
-        }
-        else if (obj == ui->bass_maxgain)
-        {
-            post = "dB";
-        }
-        else if (obj == ui->bs2b_fcut)
-        {
-            post = "Hz";
-        }
-        else if (obj == ui->rev_lcb || obj == ui->rev_lcd
-                 || obj == ui->rev_lci || obj == ui->rev_lco)
-        {
-            post = "Hz";
-        }
-        else if (obj == ui->rev_osf)
-        {
-            post = "x";
-        }
-
-        updateTooltipLabelUnit(obj, pre + QString::number(d) + post, alt == nullptr);
-    }
+    foreach(auto w, unitDecibel)
+        w->setProperty("unit", "dB");
+    foreach(auto w, unitMs)
+        w->setProperty("unit", "ms");
+    foreach(auto w, unitHz)
+        w->setProperty("unit", "Hz");
 }
 
-void MainWindow::updateTooltipLabelUnit(QObject       *sender,
-                                        const QString &text,
-                                        bool           viasignal)
-{
-    QWidget *w = qobject_cast<QWidget*>(sender);
-    w->setToolTip(text);
-
-    if (viasignal)
-    {
-        ui->info->setAnimatedText(text, false);
-    }
-}
-
-void MainWindow::updateAllUnitLabels()
-{
-    QList<QComboBox*>       comboboxesToBeUpdated({ ui->eqfiltertype, ui->eqinterpolator });
-
-    QList<QAnimatedSlider*> slidersToBeUpdated({
-                                                   ui->analog_tubedrive, ui->stereowide_level, ui->bs2b_fcut, ui->bs2b_feed,
-                                                   ui->limthreshold, ui->limrelease, ui->comp_maxrelease, ui->comp_maxattack,
-                                                   ui->rev_osf, ui->rev_erf, ui->rev_era, ui->rev_erw, ui->rev_lci, ui->rev_lcb, ui->rev_lcd,
-                                                   ui->rev_lco, ui->rev_finalwet, ui->rev_finaldry, ui->rev_wet, ui->rev_width, ui->rev_spin, ui->rev_wander, ui->rev_decay,
-                                                   ui->rev_delay, ui->rev_bass, ui->postgain, ui->comp_aggressiveness, ui->bass_maxgain
-                                               });
-
-    foreach(auto w, slidersToBeUpdated)
-        updateUnitLabel(w->valueA(), w);
-
-    foreach(auto w, comboboxesToBeUpdated)
-        updateUnitLabel(w->currentIndex(), w);
-}
-
-// ---DDC
+// DDC
 void MainWindow::setVdcFile(const QString& path)
 {
     _currentVdc = path;
@@ -1140,7 +965,7 @@ void MainWindow::determineVdcSelection()
     // File does not exist anymore
     if (!QFile(_currentVdc).exists())
     {
-        ui->ddc_files->setCurrentDirectory(AppConfig::instance().getDDCPath());
+        ui->ddc_files->setCurrentDirectory(AppConfig::instance().getVdcPath());
     }
     // File is from database
     else if (_currentVdc == AppConfig::instance().getPath("temp.vdc"))
@@ -1175,7 +1000,6 @@ void MainWindow::determineVdcSelection()
 
 void MainWindow::onVdcDatabaseSelected(const QItemSelection &, const QItemSelection &) {
     QItemSelectionModel *select = ui->ddcTable->selectionModel();
-    QString ddc_coeffs;
 
     if (select->hasSelection())
     {
@@ -1184,15 +1008,10 @@ void MainWindow::onVdcDatabaseSelected(const QItemSelection &, const QItemSelect
         int index        = select->selectedRows().first().row();
         auto* model      = static_cast<VdcDatabaseModel*>(ui->ddcTable->model());
 
-        ddc_coeffs      += "SR_44100:";
-        ddc_coeffs      += model->coefficients(index, 44100);
-        ddc_coeffs      += "\nSR_48000:";
-        ddc_coeffs      += model->coefficients(index, 48000);
-
         QFile file(AppConfig::instance().getPath("temp.vdc"));
         if (file.open(QIODevice::WriteOnly | QIODevice::Text))
         {
-            file.write(ddc_coeffs.toUtf8().constData());
+            file.write(model->composeVdcFile(index).toUtf8().constData());
         }
         file.close();
 
@@ -1212,10 +1031,10 @@ void MainWindow::onVdcDatabaseSelected(const QItemSelection &, const QItemSelect
     applyConfig();
 }
 
-// ---IRS
+// IRS
 void MainWindow::setIrsFile(const QString& path)
 {
-    _currentImpuleResponse = path;
+    _currentImpulseResponse = path;
     applyConfig();
 }
 
@@ -1226,22 +1045,22 @@ void MainWindow::determineIrsSelection()
     ui->convTabs->setCurrentIndex(0);
 
     // File was selected from favorites
-    if (_currentImpuleResponse.contains(AppConfig::instance().getPath("irs_favorites")))
+    if (_currentImpulseResponse.contains(AppConfig::instance().getPath("irs_favorites")))
     {
         ui->conv_files->setCurrentDirectory(AppConfig::instance().getIrsPath());
         ui->conv_fav->setCurrentDirectory(AppConfig::instance().getPath("irs_favorites"));
-        ui->conv_fav->setCurrentFile(_currentImpuleResponse);
+        ui->conv_fav->setCurrentFile(_currentImpulseResponse);
         ui->convTabs->setCurrentIndex(1);
     }
     // File does not exist anymore
-    else if (!QFile(_currentImpuleResponse).exists())
+    else if (!QFile(_currentImpulseResponse).exists())
     {
         ui->conv_files->setCurrentDirectory(AppConfig::instance().getIrsPath());
     }
     // External file
     else
     {
-        ui->conv_files->setCurrentFile(_currentImpuleResponse);
+        ui->conv_files->setCurrentFile(_currentImpulseResponse);
     }
 }
 
@@ -1249,7 +1068,17 @@ void MainWindow::onConvolverWaveformEdit()
 {
     bool    ok;
     QString text = QInputDialog::getText(this, tr("Advanced waveform editing"),
-                                         tr("Advanced waveform editing (6 semicolon-separated values; default: -80;-100;0;0;0;0)"), QLineEdit::Normal,
+                                         tr("Advanced waveform editing (default: -80;-100;0;0;0;0)\n"
+                                            "\n"
+                                            "Set threshold of auto-IR-cropping and add delay to a chopped/minimum phase transformed IR.\n"
+                                            "This setting is only in effect if IR optimization is enabled.\n"
+                                            "\n"
+                                            "1st value: Start threshold auto-cropping (dB)\n"
+                                            "2nd value: End threshold auto-cropping (dB)\n"
+                                            "3rd value: Channel 1 delay (samples)\n"
+                                            "4th value: Channel 2 delay (samples)\n"
+                                            "5th value: Channel 3 delay (samples)\n"
+                                            "6th value: Channel 4 delay (samples)\n"), QLineEdit::Normal,
                                          _currentConvWaveformEdit, &ok,
                                          Qt::WindowFlags(), Qt::ImhFormattedNumbersOnly);
 
@@ -1261,76 +1090,19 @@ void MainWindow::onConvolverWaveformEdit()
     }
 }
 
-// ---Liveprog
-int MainWindow::extractDefaultEelScripts(bool allowOverride,
-                                         bool user)
-{
-    QDirIterator it(":/assets/liveprog", QDirIterator::NoIteratorFlags);
-    int          i = 0;
-
-    while (it.hasNext())
-    {
-        QFile   eel(it.next());
-        QString name    = QFileInfo(eel).fileName();
-        QString newpath = AppConfig::instance().getLiveprogPath() + "/" + name;
-
-        if (QFile(newpath).exists() && !allowOverride)
-        {
-            continue;
-        }
-
-        if(!QDir(AppConfig::instance().getLiveprogPath()).exists())
-        {
-            QDir().mkpath(AppConfig::instance().getLiveprogPath());
-        }
-
-        QFile file(newpath);
-
-        if (eel.open(QIODevice::ReadOnly | QIODevice::Text) &&
-                file.open(QIODevice::WriteOnly | QIODevice::Text))
-        {
-            QTextStream stream(&file);
-            stream << eel.readAll();
-            file.close();
-            eel.close();
-        }
-
-        i++;
-    }
-
-    if (i > 0)
-    {
-        Log::debug(QString("MainWindow::extractDefaultEelScripts: %1 default eel files extracted").arg(i));
-    }
-
-    if (user)
-    {
-        if (i > 0)
-        {
-            QMessageBox::information(this, "Extract scripts", QString("%1 script(s) have been restored").arg(i));
-        }
-        else
-        {
-            QMessageBox::information(this, "Extract scripts", QString("No scripts have been extracted"));
-        }
-    }
-
-    return i;
-}
-
-// ---Helper
+// EQ
 void MainWindow::setEq(const QVector<double> &data)
 {
-    _blockApply = true;
     ui->eq_widget->setBands(QVector<double>(data));
-    _blockApply = false;
     applyConfig();
 }
 
 void MainWindow::resetEQ()
 {
     ui->eqpreset->setCurrentIndex(0);
+    _blockApply = true;
     ui->eq_dyn_widget->load(DEFAULT_GRAPHICEQ);
+    _blockApply = false;
     setEq(PresetProvider::EQ::defaultPreset());
     applyConfig();
 }
@@ -1376,11 +1148,11 @@ void MainWindow::onAutoEqImportRequested()
     sel->deleteLater();
 }
 
-// ---GraphicEQ States
+// GraphicEQ states
 void MainWindow::restoreGraphicEQView()
 {
     QVariantMap state;
-    state = ConfigIO::readFile(AppConfig::instance().getGraphicEQConfigFilePath());
+    state = ConfigIO::readFile(AppConfig::instance().getGraphicEqStatePath());
 
     ConfigContainer conf;
     conf.setConfigMap(state);
@@ -1403,87 +1175,79 @@ void MainWindow::saveGraphicEQView()
 {
     QVariantMap state;
     ui->graphicEq->storePreferences(state);
-    ConfigIO::writeFile(AppConfig::instance().getGraphicEQConfigFilePath(),
-                        state);
+    ConfigIO::writeFile(AppConfig::instance().getGraphicEqStatePath(), state);
 }
 
-// ---Connect UI-Signals
+// Connections
 void MainWindow::connectActions()
 {
-    QList<QAnimatedSlider*> registerValueAChange({
-                                                     ui->analog_tubedrive, ui->stereowide_level, ui->bs2b_fcut, ui->bs2b_feed, ui->bass_maxgain,
-                                                     ui->limthreshold, ui->limrelease, ui->comp_maxrelease, ui->comp_maxattack, ui->comp_aggressiveness,
-                                                     ui->rev_osf, ui->rev_erf, ui->rev_era, ui->rev_erw, ui->rev_lci, ui->rev_lcb, ui->rev_lcd,
-                                                     ui->rev_lco, ui->rev_finalwet, ui->rev_finaldry, ui->rev_wet, ui->rev_width, ui->rev_spin, ui->rev_wander, ui->rev_decay,
-                                                     ui->rev_delay, ui->rev_bass, ui->postgain
-                                                 });
-
-    QList<QWidget*> registerSliderRelease({
-                                              ui->stereowide_level, ui->bs2b_fcut, ui->bs2b_feed, ui->rev_osf, ui->rev_erf, ui->rev_era, ui->rev_erw,
-                                              ui->rev_lci, ui->rev_lcb, ui->rev_lcd, ui->rev_lco, ui->rev_finalwet, ui->rev_finaldry, ui->rev_wet, ui->rev_width, ui->rev_spin,
-                                              ui->rev_wander, ui->rev_decay, ui->rev_delay, ui->rev_bass, ui->analog_tubedrive, ui->limthreshold,
-                                              ui->limrelease, ui->comp_maxrelease, ui->comp_maxattack, ui->comp_aggressiveness,
-                                              ui->bass_maxgain, ui->postgain
-                                          });
+    QList<QAnimatedSlider*> sliders({
+                              ui->stereowide_level, ui->bs2b_fcut, ui->bs2b_feed, ui->rev_osf, ui->rev_erf, ui->rev_era, ui->rev_erw,
+                              ui->rev_lci, ui->rev_lcb, ui->rev_lcd, ui->rev_lco, ui->rev_finalwet, ui->rev_finaldry, ui->rev_wet, ui->rev_width, ui->rev_spin,
+                              ui->rev_wander, ui->rev_decay, ui->rev_delay, ui->rev_bass, ui->analog_tubedrive, ui->limthreshold,
+                              ui->limrelease, ui->comp_maxrelease, ui->comp_maxattack, ui->comp_aggressiveness,
+                              ui->bass_maxgain, ui->postgain
+                          });
 
     QList<QWidget*> registerClick({
-                                      ui->bassboost, ui->bs2b, ui->stereowidener, ui->analog, ui->reverb, ui->enable_eq, ui->enable_comp, ui->ddc_enable, ui->conv_enable,
-                                      ui->graphicEq->chk_enable
-                                  });
+                              ui->bassboost, ui->bs2b, ui->stereowidener, ui->analog, ui->reverb, ui->enable_eq, ui->enable_comp, ui->ddc_enable, ui->conv_enable,
+                              ui->graphicEq->chk_enable
+                          });
 
-    foreach(QWidget * w, registerValueAChange)
-        connect(w, SIGNAL(valueChangedA(int)), this, SLOT(updateUnitLabel(int)));
+    foreach(QAnimatedSlider* w, sliders)
+    {        
+        connect(w, &QAnimatedSlider::stringChanged, ui->info, qOverload<const QString&>(&FadingLabel::setAnimatedText));
+        connect(w, &QAnimatedSlider::valueChangedA, this, &MainWindow::applyConfig);
+    }
 
-    foreach(QWidget * w, registerSliderRelease)
-        connect(w, SIGNAL(sliderReleased()), this, SLOT(applyConfig()));
+    foreach(QWidget* w, registerClick)
+        connect(w,                  SIGNAL(clicked()), this, SLOT(applyConfig()));
 
-    foreach(QWidget * w, registerClick)
-        connect(w,                      SIGNAL(clicked()),                this, SLOT(applyConfig()));
+    connect(ui->disableFX,          &QAbstractButton::clicked, this, &MainWindow::onPassthroughToggled);
+    connect(ui->reseteq,            &QAbstractButton::clicked, this, &MainWindow::resetEQ);
+    connect(ui->cpreset,            &QAbstractButton::clicked, this, &MainWindow::onFragmentRequested);
+    connect(ui->set,                &QAbstractButton::clicked, this, &MainWindow::onFragmentRequested);
 
-    connect(ui->disableFX,          SIGNAL(clicked()),                this, SLOT(onPassthroughToggled()));
-    connect(ui->reseteq,            SIGNAL(clicked()),                this, SLOT(resetEQ()));
-    connect(ui->cpreset,            SIGNAL(clicked()),                this, SLOT(onFragmentRequested()));
-    connect(ui->set,                SIGNAL(clicked()),                this, SLOT(onFragmentRequested()));
+    connect(ui->eq_r_fixed,         &QAbstractButton::clicked, this, &MainWindow::applyConfig);
+    connect(ui->eq_r_flex,          &QAbstractButton::clicked, this, &MainWindow::applyConfig);
 
-    connect(ui->eq_r_fixed,         SIGNAL(clicked()),                this, SLOT(applyConfig()));
-    connect(ui->eq_r_flex,          SIGNAL(clicked()),                this, SLOT(applyConfig()));
+    connect(ui->eqfiltertype,       qOverload<int>(&QComboBox::currentIndexChanged), this, &MainWindow::applyConfig);
+    connect(ui->eqinterpolator,     qOverload<int>(&QComboBox::currentIndexChanged), this, &MainWindow::applyConfig);
+    connect(ui->conv_ir_opt,        qOverload<int>(&QComboBox::currentIndexChanged), this, &MainWindow::applyConfig);
 
-    connect(ui->eqfiltertype,       SIGNAL(currentIndexChanged(int)), this, SLOT(applyConfig()));
-    connect(ui->eqinterpolator,     SIGNAL(currentIndexChanged(int)), this, SLOT(applyConfig()));
-    connect(ui->conv_ir_opt,        SIGNAL(currentIndexChanged(int)), this, SLOT(applyConfig()));
+    connect(ui->crossfeed_mode,     qOverload<int>(&QComboBox::currentIndexChanged), this, &MainWindow::onBs2bPresetUpdated);
+    connect(ui->eqpreset,           qOverload<int>(&QComboBox::currentIndexChanged), this, &MainWindow::onEqPresetUpdated);
+    connect(ui->roompresets,        qOverload<int>(&QComboBox::currentIndexChanged), this, &MainWindow::onReverbPresetUpdated);
 
-    connect(ui->eq_widget,          SIGNAL(bandsUpdated()),           this, SLOT(applyConfig()));
-    connect(ui->eq_widget,          SIGNAL(mouseReleased()),          this, SLOT(determineEqPresetName()));
-    connect(ui->eqpreset,           SIGNAL(currentIndexChanged(int)), this, SLOT(onEqPresetUpdated()));
-    connect(ui->roompresets,        SIGNAL(currentIndexChanged(int)), this, SLOT(onReverbPresetUpdated()));
+    connect(ui->eq_widget,          &LiquidEqualizerWidget::bandsUpdated, this, &MainWindow::applyConfig);
+    connect(ui->eq_widget,          &LiquidEqualizerWidget::mouseReleased, this, &MainWindow::determineEqPresetName);
 
-    connect(ui->conv_adv_wave_edit, SIGNAL(clicked()),                this, SLOT(onConvolverWaveformEdit()));
+    connect(ui->conv_adv_wave_edit, &QAbstractButton::clicked, this, &MainWindow::onConvolverWaveformEdit);
 
-    connect(ui->crossfeed_mode,     SIGNAL(currentIndexChanged(int)), this, SLOT(onBs2bPresetUpdated()));
-
-    connect(ui->graphicEq,          &GraphicEQFilterGUI::mouseUp,     this, &MainWindow::applyConfig);
-    connect(ui->eq_dyn_widget,      &GraphicEQFilterGUI::mouseUp,     this, &MainWindow::applyConfig);
+    connect(ui->graphicEq,          &GraphicEQFilterGUI::mouseUp, this, &MainWindow::applyConfig);
+    connect(ui->eq_dyn_widget,      &GraphicEQFilterGUI::mouseUp, this, &MainWindow::applyConfig);
 
     connect(ui->graphicEq,          &GraphicEQFilterGUI::updateModelEnd, this, &MainWindow::applyConfig);
     connect(ui->eq_dyn_widget,      &GraphicEQFilterGUI::updateModelEnd, this, &MainWindow::applyConfig);
 
     connect(ui->ddcTable->selectionModel(), &QItemSelectionModel::selectionChanged, this, &MainWindow::onVdcDatabaseSelected);
-    connect(ui->liveprog,           &LiveprogSelectionWidget::toggled,       this, &MainWindow::applyConfig);
+    connect(ui->liveprog,           &LiveprogSelectionWidget::toggled, this, &MainWindow::applyConfig);
     connect(ui->liveprog,           &LiveprogSelectionWidget::scriptChanged, this, &MainWindow::applyConfig);
 
     connect(ui->graphicEq,          &GraphicEQFilterGUI::autoeqClicked, this, &MainWindow::onAutoEqImportRequested);
 
-    connect(ui->eq_r_fixed,         &QRadioButton::clicked,             this, &MainWindow::onEqModeUpdated);
-    connect(ui->eq_r_flex,          &QRadioButton::clicked,             this, &MainWindow::onEqModeUpdated);
+    connect(ui->eq_r_fixed,         &QRadioButton::clicked, this, &MainWindow::onEqModeUpdated);
+    connect(ui->eq_r_flex,          &QRadioButton::clicked, this, &MainWindow::onEqModeUpdated);
 
-    connect(_eelEditor,             &EELEditor::scriptSaved,    ui->liveprog, &LiveprogSelectionWidget::updateFromEelEditor);
+    connect(_eelEditor,             &EELEditor::scriptSaved, ui->liveprog, &LiveprogSelectionWidget::updateFromEelEditor);
 }
 
+// Setup wizard
 void MainWindow::launchFirstRunSetup()
 {
     QHBoxLayout            *lbLayout = new QHBoxLayout;
     QMessageOverlay        *lightBox = new QMessageOverlay(this);
-    FirstLaunchWizard      *wiz      = new FirstLaunchWizard(_audioService, lightBox);
+    FirstLaunchWizard      *wiz      = new FirstLaunchWizard(lightBox);
     QGraphicsOpacityEffect *eff      = new QGraphicsOpacityEffect(lightBox);
     QPropertyAnimation     *a        = new QPropertyAnimation(eff, "opacity");
 

@@ -17,24 +17,22 @@ class FirstLaunchWizard :
 	Q_OBJECT
 
 public:
-    explicit FirstLaunchWizard(IAudioService *audioService,QWidget *parent = nullptr);
+    explicit FirstLaunchWizard(QWidget *parent = nullptr);
 	~FirstLaunchWizard();
+
+protected:
+    void showEvent(QShowEvent* ev) override;
 
 signals:
 	void wizardFinished();
 
-protected:
-    void resizeEvent(QResizeEvent* ev) override;
+private slots:
+    void onSystrayRadioSelected();
+    void onSystrayAutostartToggled(bool isChecked);
+    void onCrashReportRadioSelected();
 
 private:
-	Ui::FirstLaunchWizard *ui;
-	bool lockslot = false;
-    IAudioService* audioService;
-
-	void refreshDevices();
-
-private slots:
-    void onDeviceUpdated();
+    Ui::FirstLaunchWizard *ui;
 
 };
 

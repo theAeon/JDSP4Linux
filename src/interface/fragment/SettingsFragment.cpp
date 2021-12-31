@@ -5,15 +5,19 @@
 #include "ui_SettingsFragment.h"
 
 #include "config/AppConfig.h"
+#include "data/AssetManager.h"
 #include "interface/dialog/PaletteEditor.h"
 #include "interface/QMenuEditor.h"
 #include "interface/TrayIcon.h"
 #include "MainWindow.h"
 #include "utils/AutoStartManager.h"
+#include "utils/DesktopServices.h"
 
+#include <AeqSelector.h>
+
+#include <AeqPackageManager.h>
 #include <QCloseEvent>
 #include <QDebug>
-#include <QDesktopServices>
 #include <QGraphicsOpacityEffect>
 #include <QMessageBox>
 #include <QProcess>
@@ -22,7 +26,6 @@
 #include <QTimer>
 #include <QUrl>
 using namespace std;
-static bool lockslot = false;
 
 SettingsFragment::SettingsFragment(TrayIcon *trayIcon,
                                    IAudioService *audioService,
@@ -30,72 +33,38 @@ SettingsFragment::SettingsFragment(TrayIcon *trayIcon,
     BaseFragment(parent),
 	ui(new Ui::SettingsFragment),
     _trayIcon(trayIcon),
-    _audioService(audioService)
+    _audioService(audioService),
+    _paletteEditor(new PaletteEditor(&AppConfig::instance(), this))
 {
 	ui->setupUi(this);
 
 #ifdef USE_PULSEAUDIO
-    ui->devices->setEnabled(false);
-    ui->devices_group->setTitle("Select sink/device to be processed (PipeWire only)");
+    ui->devices->setVisible(false);
+    ui->selector->findItems("Devices", Qt::MatchFlag::MatchExactly).first()->setHidden(true);
     ui->blocklistBox->setVisible(false);
 #endif
 
-    QString autostart_path = AutostartManager::getAutostartPath("jdsp-gui.desktop");
+    _paletteEditor->setFixedSize(_paletteEditor->geometry().width(), _paletteEditor->geometry().height());
 
-	/*
+    /*
 	 * Prepare TreeView
 	 */
-
     ui->selector->setCurrentItem(ui->selector->topLevelItem(0));
 	ui->stackedWidget->setCurrentIndex(0);
     ui->stackedWidget->repaint();
-	connect(ui->selector, static_cast<void (QTreeWidget::*)(QTreeWidgetItem*, QTreeWidgetItem*)>(&QTreeWidget::currentItemChanged), this, [this](QTreeWidgetItem *cur, QTreeWidgetItem*)
-	{
-		int toplevel_index = ui->selector->indexOfTopLevelItem(cur);
-
-		switch (toplevel_index)
-		{
-			case -1:
-
-                if (cur->text(0) == "Context menu")
-				{
-                    ui->stackedWidget->setCurrentIndex(4);
-				}
-
-				if (cur->text(0) == "Advanced")
-				{
-                    ui->stackedWidget->setCurrentIndex(6);
-				}
-
-				break;
-            case 4:
-				// -- SA/ROOT
-                //ui->stackedWidget->setCurrentIndex(5);
-				break;
-			default:
-                ui->stackedWidget->setCurrentIndex(toplevel_index);
-                break;
-		}
-
-        // Workaround: Force redraw
-        ui->stackedWidget->hide();
-        ui->stackedWidget->show();
-        ui->stackedWidget->repaint();
-	});
-    //ui->selector->expandItem(ui->selector->findItems("Spectrum analyser", Qt::MatchFlag::MatchExactly).first());
     ui->selector->expandItem(ui->selector->findItems("Tray icon", Qt::MatchFlag::MatchExactly).first());
+    connect(ui->selector, &QTreeWidget::currentItemChanged, this, &SettingsFragment::onTreeItemSelected);
 
 	/*
 	 * Prepare all combooxes
 	 */
 	ui->paletteSelect->addItem("Default",    "default");
 	ui->paletteSelect->addItem("Black",      "black");
-	ui->paletteSelect->addItem("Blue",       "blue");
+    ui->paletteSelect->addItem("Blue Neon",  "blue");
 	ui->paletteSelect->addItem("Dark",       "dark");
 	ui->paletteSelect->addItem("Dark Blue",  "darkblue");
 	ui->paletteSelect->addItem("Dark Green", "darkgreen");
-	ui->paletteSelect->addItem("Honeycomb",  "honeycomb");
-	ui->paletteSelect->addItem("Gray",       "gray");
+    ui->paletteSelect->addItem("Honeycomb",  "honeycomb");
 	ui->paletteSelect->addItem("Green",      "green");
 	ui->paletteSelect->addItem("Stone",      "stone");
 	ui->paletteSelect->addItem("Custom",     "custom");
@@ -105,250 +74,74 @@ SettingsFragment::SettingsFragment(TrayIcon *trayIcon,
 		ui->themeSelect->addItem(i);
 	}
 
-	/*
-	 * Refresh all input fields
+    /*
+     * Session signals
 	 */
-	refreshAll();
-
-
-	/*
-	 * Connect all signals for Session
-	 */
-	auto systray_sel = [this]
-					   {
-						   if (lockslot)
-						   {
-							   return;
-						   }
-
-                           AppConfig::instance().set(AppConfig::TrayIconEnabled, ui->systray_r_showtray->isChecked());
-                           ui->systray_icon_box->setEnabled(ui->systray_r_showtray->isChecked());
-                           ui->menu_edit->setEnabled(ui->systray_r_showtray->isChecked());
-					   };
-	connect(ui->systray_r_none,     &QRadioButton::clicked, this, systray_sel);
-	connect(ui->systray_r_showtray, &QRadioButton::clicked, this, systray_sel);
-	auto autostart_update = [this, autostart_path]
-							{
-								if (ui->systray_minOnBoot->isChecked())
-								{
-									AutostartManager::saveDesktopFile(autostart_path,
-                                                                      AppConfig::instance().get<QString>(AppConfig::ExecutablePath),
-									                                  ui->systray_delay->isChecked());
-								}
-								else
-								{
-									QFile(autostart_path).remove();
-								}
-
-								ui->systray_delay->setEnabled(ui->systray_minOnBoot->isChecked());
-							};
-    connect(ui->systray_minOnBoot,     &QPushButton::clicked, this, autostart_update);
-	connect(ui->systray_delay,         &QPushButton::clicked, this, autostart_update);
-	/*
-	 * Connect all signals for Interface
-	 */
-    connect(ui->themeSelect, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int index)
-	{
-		if (lockslot)
-		{
-		    return;
-		}
-
-        AppConfig::instance().set(AppConfig::Theme, ui->themeSelect->itemText(index).toUtf8().constData());
-	});
-    connect(ui->paletteSelect, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int index)
-	{
-		if (lockslot)
-		{
-		    return;
-		}
-
-        AppConfig::instance().set(AppConfig::ThemeColors, ui->paletteSelect->itemData(index).toString());
-        ui->paletteConfig->setEnabled(AppConfig::instance().get<QString>(AppConfig::ThemeColors) == "custom");
-	});
-	connect(ui->paletteConfig, &QPushButton::clicked, this, [this]
-	{
-		auto c = new class PaletteEditor (&AppConfig::instance(), this);
-		c->setFixedSize(c->geometry().width(), c->geometry().height());
-		c->show();
-	});
-	connect(ui->eq_alwaysdrawhandles, &QCheckBox::clicked, [this]()
-	{
-        AppConfig::instance().set(AppConfig::EqualizerShowHandles, ui->eq_alwaysdrawhandles->isChecked());
-	});
-	/*
-	 * Connect all signals for Default Paths
-	 */
-	connect(ui->saveirspath, &QPushButton::clicked, this, [this]
-	{
-		AppConfig::instance().setIrsPath(ui->irspath->text());
-	});
-	connect(ui->saveddcpath, &QPushButton::clicked, this, [this]
-	{
-		AppConfig::instance().setDDCPath(ui->ddcpath->text());
-	});
-	connect(ui->saveliveprogpath, &QPushButton::clicked, this, [this]
-	{
-		AppConfig::instance().setLiveprogPath(ui->liveprog_path->text());
-	});
-    connect(ui->liveprog_autoextract, &QCheckBox::clicked, this, [this]()
-	{
-        AppConfig::instance().set(AppConfig::LiveprogAutoExtract, ui->liveprog_autoextract->isChecked());
-	});
-	connect(ui->liveprog_extractNow, &QPushButton::clicked, this, [this]
-	{
-        auto reply = QMessageBox::question(this, tr("Question"), tr("Do you want to override existing EEL scripts (if any)?"),
-		                              QMessageBox::Yes | QMessageBox::No);
-
-		emit requestEelScriptExtract(reply == QMessageBox::Yes, true);
-	});
+    connect(ui->systray_r_none, &QRadioButton::clicked, this, &SettingsFragment::onSystrayToggled);
+    connect(ui->systray_r_showtray, &QRadioButton::clicked, this, &SettingsFragment::onSystrayToggled);
+    connect(ui->systray_minOnBoot, &QPushButton::clicked, this, &SettingsFragment::onAutoStartToggled);
+    connect(ui->systray_delay, &QPushButton::clicked, this, &SettingsFragment::onAutoStartToggled);
+    connect(ui->menu_edit, &QMenuEditor::targetChanged, this, &SettingsFragment::onTrayEditorCommitted);
+    connect(ui->menu_edit, &QMenuEditor::resetPressed, this, &SettingsFragment::onTrayEditorReset);
+    ui->menu_edit->setSourceMenu(trayIcon->buildAvailableActions());
 
 	/*
-	 * Connect all signals for Devices
+     * Interface signals
 	 */
-	auto deviceUpdated = [this]()
-     {
-         if (lockslot)
-         {
-             return;
-         }
-
-         AppConfig::instance().set(AppConfig::AudioOutputUseDefault, ui->dev_mode_auto->isChecked());
-
-         if (!ui->dev_mode_auto->isChecked())
-         {
-             if (ui->dev_select->currentData() == "---")
-             {
-                 return;
-             }
-
-             AppConfig::instance().set(AppConfig::AudioOutputDevice, ui->dev_select->currentData());
-         }
-     };
-
-	connect(ui->dev_mode_auto,   &QRadioButton::clicked,                                                             this, deviceUpdated);
-	connect(ui->dev_mode_manual, &QRadioButton::clicked,                                                             this, deviceUpdated);
-    connect(ui->dev_select,      qOverload<int>(&QComboBox::currentIndexChanged), this, deviceUpdated);
+    connect(ui->themeSelect, qOverload<int>(&QComboBox::currentIndexChanged), this, &SettingsFragment::onThemeSelected);
+    connect(ui->paletteSelect, qOverload<int>(&QComboBox::currentIndexChanged), this, &SettingsFragment::onPaletteSelected);
+    connect(ui->paletteConfig, &QPushButton::clicked, _paletteEditor, &PaletteEditor::show);
+    connect(ui->eq_alwaysdrawhandles, &QCheckBox::clicked, this, &SettingsFragment::onEqualizerHandlesToggled);
 
 	/*
-	 * Connect all signals for SA/ROOT
+     * Paths signals
 	 */
-    /*connect(ui->sa_enable,       &QGroupBox::clicked,                                                                this, [this]()
-	{
-        AppConfig::instance().set(AppConfig::SpectrumEnabled, ui->sa_enable->isChecked());
-		ui->spectrum_advanced->setEnabled(ui->sa_enable->isChecked());
-		emit reopenSettings();
-	});
-	connect(ui->sa_bands, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged), this, [this](int number)
-	{
-        AppConfig::instance().set(AppConfig::SpectrumBands, number);
-	});
-	connect(ui->sa_minfreq, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged), this, [this](int number)
-	{
-        AppConfig::instance().set(AppConfig::SpectrumMinFreq, number);
-	});
-	connect(ui->sa_maxfreq, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged), this, [this](int number)
-	{
-        AppConfig::instance().set(AppConfig::SpectrumMaxFreq, number);
-	});
-	connect(ui->sa_input, static_cast<void (QComboBox::*)(const QString &)>(&QComboBox::currentIndexChanged), this, [this](const QString &str)
-	{
-		if (lockslot)
-		{
-		    return;
-		}
+    connect(ui->liveprog_autoextract, &QCheckBox::clicked, this, &SettingsFragment::onLiveprogAutoExtractToggled);
+    connect(ui->liveprog_extractNow, &QPushButton::clicked, this, &SettingsFragment::onExtractAssetsClicked);
+    connect(ui->savePaths, &QPushButton::clicked, this, &SettingsFragment::onSavePathsClicked);
 
-		AppConfig::instance().setSpectrumInput(str);
-	});
-	connect(ui->sa_type, static_cast<void (QComboBox::*)(const QString &)>(&QComboBox::currentIndexChanged), this, [this](const QString &)
-	{
-		if (lockslot)
-		{
-		    return;
-		}
-
-        AppConfig::instance().set(AppConfig::SpectrumTheme, ui->sa_type->currentIndex());
-    });*/
+    /*
+     * Network signals
+     */
+    connect(ui->crashShareAllow, &QCheckBox::toggled, this, &SettingsFragment::onCrashShareToggled);
+    connect(ui->aeqManage, &QPushButton::clicked, this, &SettingsFragment::onAeqDatabaseManageClicked);
 
 	/*
-	 * Connect all signals for SA/Advanced
+     *  Devices signals
 	 */
-    /*connect(ui->sa_refresh, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged), this, [this](int number)
-	{
-        AppConfig::instance().set(AppConfig::SpectrumRefresh, number);
-	});
-	connect(ui->sa_multi, static_cast<void (QDoubleSpinBox::*)(double)>(&QDoubleSpinBox::valueChanged), this, [this](double number)
-	{
-        AppConfig::instance().set(AppConfig::SpectrumMultiplier, number);
-	});
-	connect(ui->sa_grid, &QCheckBox::clicked, this, [this]()
-	{
-        AppConfig::instance().set(AppConfig::SpectrumGrid, ui->sa_grid->isChecked());
-    });*/
+    connect(ui->dev_mode_auto, &QRadioButton::clicked, this, &SettingsFragment::onDefaultDeviceSelected);
+    connect(ui->dev_mode_manual, &QRadioButton::clicked, this, &SettingsFragment::onDefaultDeviceSelected);
+    connect(ui->dev_select, qOverload<int>(&QComboBox::currentIndexChanged), this, &SettingsFragment::onDefaultDeviceSelected);
 
 	/*
-	 * Connect all signals for Global
+     * Global signals
 	 */
-    connect(ui->close,  &QPushButton::clicked, this, &SettingsFragment::closePressed);
-	connect(ui->github, &QPushButton::clicked, this, [] {
-		QDesktopServices::openUrl(QUrl("https://github.com/Audio4Linux/JDSP4Linux"));
-	});
-    connect(ui->menu_edit, &QMenuEditor::targetChanged, this, [this, trayIcon]
-	{
-		auto menu = ui->menu_edit->exportMenu();
-		trayIcon->updateTrayMenu(menu);
-	});
-    connect(ui->menu_edit, &QMenuEditor::resetPressed, this, [this, trayIcon]
-	{
-		QMessageBox::StandardButton reply = QMessageBox::question(this, "Warning", "Do you really want to restore the default layout?",
-		                                                          QMessageBox::Yes | QMessageBox::No);
+    connect(ui->close, &QPushButton::clicked, this, &SettingsFragment::closePressed);
+    connect(ui->github, &QPushButton::clicked, this, &SettingsFragment::onGithubLinkClicked);
 
-		if (reply == QMessageBox::Yes)
-		{
-		    ui->menu_edit->setTargetMenu(trayIcon->buildDefaultActions());
-		    auto menu = ui->menu_edit->exportMenu();
-		    trayIcon->updateTrayMenu(menu);
-		}
-	});
-	ui->menu_edit->setSourceMenu(trayIcon->buildAvailableActions());
+    connect(ui->run_first_launch, &QPushButton::clicked, this, &SettingsFragment::onSetupWizardLaunchClicked);
+    connect(ui->blocklistClear, &QPushButton::clicked, this, &SettingsFragment::onBlocklistClearClicked);
+    connect(ui->blocklistInvert, &QCheckBox::stateChanged, this, &SettingsFragment::onBlocklistInvertToggled);
 
-    connect(ui->run_first_launch, &QPushButton::clicked, this, [this]
-    {
-        emit closePressed();
-        QTimer::singleShot(300, this, &SettingsFragment::launchSetupWizard);
-    });
-    connect(ui->blocklistClear, &QPushButton::clicked, this, []
-    {
-        AppConfig::instance().set(AppConfig::AudioAppBlocklist, "");
-    });
-    connect(ui->blocklistInvert, &QCheckBox::stateChanged, this, [this](bool state)
-    {
-        auto invertInfo = "You are about to enable allowlist mode. JamesDSP will not process all applications by default while this mode is active. "
-                          "You need to explicitly allow each app to get processed in the 'Apps' menu.\n";
-        auto button = QMessageBox::question(this, "Are you sure?",
-                              state ? invertInfo : ""
-                              "This action will reset your current blocklist or allowlist. Do you want to continue?");
+    /*
+     * Refresh all input fields
+     */
+    refreshAll();
 
-        if(button == QMessageBox::Yes)
-        {
-            AppConfig::instance().set(AppConfig::AudioAppBlocklistInvert, state);
-            AppConfig::instance().set(AppConfig::AudioAppBlocklist, "");
-        }
-    });
 	/*
 	 * Check for systray availability
 	 */
+    ui->systray_unsupported->hide();
 #ifndef QT_NO_SYSTEMTRAYICON
-	ui->systray_unsupported->hide();
-#else
-	ui->session->setEnabled(false);
-#endif
-
 	if (!QSystemTrayIcon::isSystemTrayAvailable())
 	{
+#endif
 		ui->systray_unsupported->show();
 		ui->session->setEnabled(false);
+        ui->session_menu->setEnabled(false);
+#ifndef QT_NO_SYSTEMTRAYICON
 	}
+#endif
 }
 
 SettingsFragment::~SettingsFragment()
@@ -358,11 +151,12 @@ SettingsFragment::~SettingsFragment()
 
 void SettingsFragment::refreshDevices()
 {
-	lockslot = true;
+    _lockslot = true;
 	ui->dev_select->clear();
 
     ui->dev_mode_auto->setChecked(AppConfig::instance().get<bool>(AppConfig::AudioOutputUseDefault));
     ui->dev_mode_manual->setChecked(!AppConfig::instance().get<bool>(AppConfig::AudioOutputUseDefault));
+    ui->dev_select->setDisabled(ui->dev_mode_auto->isChecked());
 
     auto devices = _audioService->sinkDevices();
 
@@ -394,19 +188,17 @@ void SettingsFragment::refreshDevices()
         ui->dev_select->addItem(name, current);
         ui->dev_select->setCurrentText(name);
     }
-	lockslot = false;
+    _lockslot = false;
 }
 
 void SettingsFragment::refreshAll()
 {
-	lockslot = true;
+    _lockslot = true;
 	QString autostart_path = AutostartManager::getAutostartPath("jdsp-gui.desktop");
 
 	ui->menu_edit->setTargetMenu(_trayIcon->getTrayMenu());
-    ui->menu_edit->setIconStyle(AppConfig::instance().get<bool>(AppConfig::ThemeColorsCustomWhiteIcons));
-
 	ui->irspath->setText(AppConfig::instance().getIrsPath());
-	ui->ddcpath->setText(AppConfig::instance().getDDCPath());
+    ui->ddcpath->setText(AppConfig::instance().getVdcPath());
 	ui->liveprog_path->setText(AppConfig::instance().getLiveprogPath());
 
     ui->liveprog_autoextract->setChecked(AppConfig::instance().get<bool>(AppConfig::LiveprogAutoExtract));
@@ -443,118 +235,214 @@ void SettingsFragment::refreshAll()
     ui->systray_icon_box->setEnabled(AppConfig::instance().get<bool>(AppConfig::TrayIconEnabled));
     ui->menu_edit->setEnabled(AppConfig::instance().get<bool>(AppConfig::TrayIconEnabled));
 
-	bool autostart_enabled     = AutostartManager::inspectDesktopFile(autostart_path, AutostartManager::Exists);
-	bool autostart_delayed     = AutostartManager::inspectDesktopFile(autostart_path, AutostartManager::Delayed);
-
-    ui->systray_minOnBoot->setChecked(autostart_enabled);
-	ui->systray_delay->setEnabled(autostart_enabled);
-	ui->systray_delay->setChecked(autostart_delayed);
+    bool autostartEnabled = AutostartManager::inspectDesktopFile(autostart_path, AutostartManager::Exists);
+    ui->systray_minOnBoot->setChecked(autostartEnabled);
+    ui->systray_delay->setEnabled(autostartEnabled);
+    ui->systray_delay->setChecked(AutostartManager::inspectDesktopFile(autostart_path, AutostartManager::Delayed));
 
     ui->eq_alwaysdrawhandles->setChecked(AppConfig::instance().get<bool>(AppConfig::EqualizerShowHandles));
 
     ui->blocklistInvert->setChecked(AppConfig::instance().get<bool>(AppConfig::AudioAppBlocklistInvert));
 
+    ui->crashShareAllow->setChecked(AppConfig::instance().get<bool>(AppConfig::SendCrashReports));
+
+    ui->aeqStatus->setText(AeqPackageManager().isPackageInstalled() ? "installed" : "not installed");
+
 	refreshDevices();
 
-    /*int   bands      = AppConfig::instance().get<int>(AppConfig::SpectrumBands);
-    int   minfreq    = AppConfig::instance().get<int>(AppConfig::SpectrumMinFreq);
-    int   maxfreq    = AppConfig::instance().get<int>(AppConfig::SpectrumMaxFreq);
-    int   refresh    = AppConfig::instance().get<int>(AppConfig::SpectrumRefresh);
-    float multiplier = AppConfig::instance().get<float>(AppConfig::SpectrumMultiplier);
-
-	// Set default values if undefined
-	if (bands == 0)
-	{
-		bands = 100;
-	}
-
-	if (maxfreq == 0)
-	{
-		maxfreq = 1000;
-	}
-
-	if (refresh == 0)
-	{
-		refresh = 10;
-	}
-
-	if (multiplier == 0)
-	{
-		multiplier = 0.15;
-	}
-
-	// Check boundaries
-	if (bands < 5 )
-	{
-		bands = 5;
-	}
-	else if (bands > 300)
-	{
-		bands = 300;
-	}
-
-	if (minfreq < 0)
-	{
-		minfreq = 0;
-	}
-	else if (minfreq > 10000)
-	{
-		minfreq = 10000;
-	}
-
-	if (maxfreq < 100)
-	{
-		maxfreq = 100;
-	}
-	else if (maxfreq > 24000)
-	{
-		maxfreq = 24000;
-	}
-
-	if (refresh < 10)
-	{
-		refresh = 10;
-	}
-	else if (refresh > 500)
-	{
-		refresh = 500;
-	}
-
-	if (multiplier < 0.01)
-	{
-		multiplier = 0.01;
-	}
-	else if (multiplier > 1)
-	{
-		multiplier = 1;
-	}
-
-	if (maxfreq < minfreq)
-	{
-		maxfreq = minfreq + 100;
-	}
-
-    ui->sa_enable->setChecked(AppConfig::instance().get<bool>(AppConfig::SpectrumEnabled));
-    ui->spectrum_advanced->setEnabled(AppConfig::instance().get<bool>(AppConfig::SpectrumEnabled));
-
-    ui->sa_type->setCurrentIndex(AppConfig::instance().get<int>(AppConfig::SpectrumTheme));
-	ui->sa_bands->setValue(bands);
-	ui->sa_minfreq->setValue(minfreq);
-	ui->sa_maxfreq->setValue(maxfreq);
-    ui->sa_grid->setChecked(AppConfig::instance().get<bool>(AppConfig::SpectrumGrid));
-	ui->sa_refresh->setValue(refresh);
-    ui->sa_multi->setValue(multiplier);*/
-
-	lockslot = false;
+    _lockslot = false;
 }
 
 void SettingsFragment::updateButtonStyle(bool white)
 {
-	ui->menu_edit->setIconStyle(white);
+    ui->menu_edit->setIconStyle(white);
+}
+
+void SettingsFragment::onSavePathsClicked()
+{
+    AppConfig::instance().setIrsPath(ui->irspath->text());
+    AppConfig::instance().setVdcPath(ui->ddcpath->text());
+    AppConfig::instance().setLiveprogPath(ui->liveprog_path->text());
+}
+
+void SettingsFragment::onExtractAssetsClicked()
+{
+    auto result = QMessageBox::question(this, "Override liveprog scripts?",
+                                        "Do you want to override existing default liveprog scripts?\nIf they have been modified, they will be reset.");
+
+    int i = AssetManager::instance().extractAll(result == QMessageBox::Yes);
+    QMessageBox::information(this, "Extract assets", QString("%1 files have been restored").arg(i));
+}
+
+void SettingsFragment::onDefaultDeviceSelected()
+{
+    if (_lockslot)
+    {
+        return;
+    }
+
+    ui->dev_select->setDisabled(ui->dev_mode_auto->isChecked());
+    AppConfig::instance().set(AppConfig::AudioOutputUseDefault, ui->dev_mode_auto->isChecked());
+
+    if (!ui->dev_mode_auto->isChecked())
+    {
+        if (ui->dev_select->currentData() == "...")
+        {
+            return;
+        }
+
+        AppConfig::instance().set(AppConfig::AudioOutputDevice, ui->dev_select->currentData());
+    }
+}
+
+void SettingsFragment::onTreeItemSelected(QTreeWidgetItem *cur, QTreeWidgetItem *prev)
+{
+    Q_UNUSED(prev)
+    int topLevelIndex = ui->selector->indexOfTopLevelItem(cur);
+
+    switch (topLevelIndex)
+    {
+        case -1:
+            if (cur->text(0) == "Context menu")
+            {
+                ui->stackedWidget->setCurrentIndex(5);
+            }
+            break;
+        default:
+            ui->stackedWidget->setCurrentIndex(topLevelIndex);
+            break;
+    }
+
+    // Workaround: Force redraw
+    ui->stackedWidget->hide();
+    ui->stackedWidget->show();
+    ui->stackedWidget->repaint();
+}
+
+void SettingsFragment::onAutoStartToggled()
+{
+    QString path = AutostartManager::getAutostartPath("jdsp-gui.desktop");
+    if (ui->systray_minOnBoot->isChecked())
+    {
+        AutostartManager::saveDesktopFile(path,
+                                          AppConfig::instance().get<QString>(AppConfig::ExecutablePath),
+                                          ui->systray_delay->isChecked());
+    }
+    else
+    {
+        QFile(path).remove();
+    }
+
+    ui->systray_delay->setEnabled(ui->systray_minOnBoot->isChecked());
+}
+
+void SettingsFragment::onSystrayToggled()
+{
+    if (_lockslot)
+    {
+        return;
+    }
+
+    AppConfig::instance().set(AppConfig::TrayIconEnabled, ui->systray_r_showtray->isChecked());
+    ui->systray_icon_box->setEnabled(ui->systray_r_showtray->isChecked());
+    ui->menu_edit->setEnabled(ui->systray_r_showtray->isChecked());
+}
+
+void SettingsFragment::onThemeSelected(int index)
+{
+    if (_lockslot)
+    {
+        return;
+    }
+
+    AppConfig::instance().set(AppConfig::Theme, ui->themeSelect->itemText(index).toUtf8().constData());
+}
+
+void SettingsFragment::onPaletteSelected(int index)
+{
+    if (_lockslot)
+    {
+        return;
+    }
+
+    AppConfig::instance().set(AppConfig::ThemeColors, ui->paletteSelect->itemData(index).toString());
+    ui->paletteConfig->setEnabled(AppConfig::instance().get<QString>(AppConfig::ThemeColors) == "custom");
+}
+
+void SettingsFragment::onBlocklistInvertToggled(bool state)
+{
+    auto invertInfo = "You are about to enable allowlist mode. JamesDSP will not process all applications by default while this mode is active. "
+                      "You need to explicitly allow each app to get processed in the 'Apps' menu.\n";
+    auto button = QMessageBox::question(this, "Are you sure?",
+                          state ? invertInfo : ""
+                          "This action will reset your current blocklist or allowlist. Do you want to continue?");
+
+    if(button == QMessageBox::Yes)
+    {
+        AppConfig::instance().set(AppConfig::AudioAppBlocklistInvert, state);
+        AppConfig::instance().set(AppConfig::AudioAppBlocklist, "");
+    }
+}
+
+void SettingsFragment::onBlocklistClearClicked()
+{
+    AppConfig::instance().set(AppConfig::AudioAppBlocklist, "");
+}
+
+void SettingsFragment::onSetupWizardLaunchClicked()
+{
+    emit closePressed();
+    QTimer::singleShot(300, this, &SettingsFragment::launchSetupWizard);
+}
+
+void SettingsFragment::onTrayEditorCommitted()
+{
+    auto menu = ui->menu_edit->exportMenu();
+    _trayIcon->updateTrayMenu(menu);
+}
+
+void SettingsFragment::onTrayEditorReset()
+{
+    QMessageBox::StandardButton reply = QMessageBox::question(this, "Warning", "Do you really want to restore the default menu layout?",
+                                                              QMessageBox::Yes | QMessageBox::No);
+
+    if (reply == QMessageBox::Yes)
+    {
+        ui->menu_edit->setTargetMenu(_trayIcon->buildDefaultActions());
+        _trayIcon->updateTrayMenu(ui->menu_edit->exportMenu());
+    }
+}
+
+void SettingsFragment::onEqualizerHandlesToggled()
+{
+    AppConfig::instance().set(AppConfig::EqualizerShowHandles, ui->eq_alwaysdrawhandles->isChecked());
+}
+
+void SettingsFragment::onLiveprogAutoExtractToggled()
+{
+    AppConfig::instance().set(AppConfig::LiveprogAutoExtract, ui->liveprog_autoextract->isChecked());
+}
+
+void SettingsFragment::onGithubLinkClicked()
+{
+    DesktopServices::openUrl("https://github.com/Audio4Linux/JDSP4Linux", this);
+}
+
+void SettingsFragment::onAeqDatabaseManageClicked()
+{
+    auto* aeqSel = new AeqSelector(this);
+    aeqSel->forceManageMode();
+    aeqSel->exec();
+    refreshAll();
+}
+
+void SettingsFragment::onCrashShareToggled(bool state)
+{
+    AppConfig::instance().set(AppConfig::SendCrashReports, state);
 }
 
 void SettingsFragment::setVisible(bool visible)
 {
-	refreshDevices();
+    refreshAll();
     BaseFragment::setVisible(visible);
 }

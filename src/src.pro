@@ -20,10 +20,13 @@ include(../3rdparty/3rdparty.pri)
 
 include(audio/AudioDrivers.pri)
 
-#include(subprojects/Visualization/SpectrumAudioViewer.pri)
 include(subprojects/AutoEqIntegration/AutoEqIntegration.pri)
-include(subprojects/FlatTabWidget/FlatTabWidget.pri)
-include(subprojects/GraphicEQWidget/GraphicEQWidget.pri)
+include(subprojects/FlatTabWidget/FlatTabWidget/FlatTabWidget.pri)
+include(subprojects/LiquidEqualizerWidget/LiquidEqualizerWidget.pri)
+include(subprojects/GraphicEQWidget/GraphicEQWidget/GraphicEQWidget.pri)
+
+DEFINES += HAS_JDSP_DRIVER
+include(subprojects/EELEditor/src/EELEditor.pri)
 
 # The following define makes your compiler emit warnings if you use
 # any feature of Qt which has been marked as deprecated (the exact warnings
@@ -42,6 +45,7 @@ SOURCES += \
     config/ConfigContainer.cpp \
     config/ConfigIO.cpp \
     crash/airbag.c \
+    data/AssetManager.cpp \
     data/EelParser.cpp \
     data/PresetManager.cpp \
     data/PresetProvider.cpp \
@@ -59,7 +63,6 @@ SOURCES += \
     interface/LiveprogSelectionWidget.cpp \
     interface/TrayIcon.cpp \
     interface/dialog/PaletteEditor.cpp \
-    interface/LiquidEqualizerWidget.cpp \
     interface/dialog/PresetRuleDialog.cpp \
     interface/fragment/AppManagerFragment.cpp \
     interface/fragment/FirstLaunchWizard.cpp \
@@ -76,6 +79,8 @@ SOURCES += \
     MainWindow.cpp \
     main.cpp \
     utils/AutoStartManager.cpp \
+    utils/CrashReportSender.cpp \
+    utils/DesktopServices.cpp \
     utils/Log.cpp \
     utils/SingleInstanceMonitor.cpp \
     utils/dbus/ClientProxy.cpp \
@@ -107,6 +112,7 @@ HEADERS += \
     crash/killer.h \
     crash/safecall.h \
     crash/stacktrace.h \
+    data/AssetManager.h \
     data/EelParser.h \
     data/InitializableQMap.h \
     data/PresetManager.h \
@@ -132,7 +138,6 @@ HEADERS += \
     interface/dialog/PresetRuleDialog.h \
     interface/event/EventFilter.h \
     interface/event/ScrollFilter.h \
-    interface/LiquidEqualizerWidget.h \
     interface/fragment/AppManagerFragment.h \
     interface/fragment/BaseFragment.h \
     interface/fragment/FirstLaunchWizard.h \
@@ -150,9 +155,12 @@ HEADERS += \
     interface/WidgetMarqueeLabel.h \
     MainWindow.h \
     utils/AutoStartManager.h \
+    utils/CrashReportSender.h \
     utils/DebuggerUtils.h \
+    utils/DesktopServices.h \
     utils/Log.h \
     utils/SingleInstanceMonitor.h \
+    utils/VersionMacros.h \
     utils/dbus/ClientProxy.h \
     utils/dbus/ServerAdaptor.h \
     utils/FindBinary.h \
@@ -194,16 +202,3 @@ INCLUDEPATH += $$PWD/../libjamesdsp/subtree/Main/libjamesdsp/jni/jamesdsp/jdsp/ 
                $$PWD/../libjamesdsp
 DEPENDPATH += $$PWD/../libjamesdsp
 unix:!macx: PRE_TARGETDEPS += $$OUT_PWD/../libjamesdsp/liblibjamesdsp.a
-
-# Link libEELEditor
-unix:!macx: LIBS += -L$$OUT_PWD/subprojects/EELEditor/src -leeleditor
-INCLUDEPATH += $$PWD/subprojects/EELEditor/src \
-               $$PWD/subprojects/EELEditor/3rdparty/QCodeEditor/include
-DEPENDPATH += $$PWD/subprojects/EELEditor/src
-unix:!macx: PRE_TARGETDEPS += $$OUT_PWD/subprojects/EELEditor/src/libeeleditor.a
-
-# Link libqtadvanceddocking (libEELEditor)
-LIBS += -L$$OUT_PWD/subprojects/EELEditor/3rdparty/docking-system/lib
-include($$PWD/subprojects/EELEditor/3rdparty/docking-system/ads.pri)
-INCLUDEPATH += $$PWD/subprojects/EELEditor/3rdparty/docking-system/src
-DEPENDPATH += $$PWD/subprojects/EELEditor/3rdparty/docking-system/src

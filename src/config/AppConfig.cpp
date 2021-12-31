@@ -3,6 +3,8 @@
 #include "ConfigIO.h"
 #include "utils/Common.h"
 
+#define ENCLOSE_QUOTES(x) "\"" + x + "\""
+
 #define DEFINE_KEY(name, defaultValue) \
     definitions[name] = QVariant(defaultValue);
 
@@ -20,15 +22,6 @@ AppConfig::AppConfig()
     DEFINE_KEY(TrayIconEnabled, true);
     DEFINE_KEY(TrayIconMenu, "");
 
-    DEFINE_KEY(SpectrumEnabled, false);
-    DEFINE_KEY(SpectrumGrid, false);
-    DEFINE_KEY(SpectrumBands, 0);
-    DEFINE_KEY(SpectrumMinFreq, 0);
-    DEFINE_KEY(SpectrumMaxFreq, 0);
-    DEFINE_KEY(SpectrumTheme, 0);
-    DEFINE_KEY(SpectrumRefresh, 0);
-    DEFINE_KEY(SpectrumMultiplier, 0);
-
     DEFINE_KEY(EqualizerShowHandles, false);
 
     DEFINE_KEY(SetupDone, false);
@@ -41,6 +34,12 @@ AppConfig::AppConfig()
     DEFINE_KEY(AudioAppBlocklistInvert, false);
 
     DEFINE_KEY(AeqPlotDarkMode, false);
+
+    DEFINE_KEY(ConvolverDefaultPath, ENCLOSE_QUOTES(getPath("irs")));
+    DEFINE_KEY(VdcDefaultPath, ENCLOSE_QUOTES(getPath("vdc")));
+    DEFINE_KEY(LiveprogDefaultPath, ENCLOSE_QUOTES(getPath("liveprog")));
+
+    DEFINE_KEY(SendCrashReports, true);
 
     connect(this, &AppConfig::updated, this, &AppConfig::notify);
 
@@ -57,6 +56,14 @@ void AppConfig::set(const Key &key, const QVariant &value)
     _appconf->setValue(QVariant::fromValue(key).toString(), value);
     emit updated(key, value);
     save();
+}
+
+bool AppConfig::exists(const Key &key)
+{
+    bool exists;
+    auto skey = QVariant::fromValue(key).toString();
+    auto variant = _appconf->getVariant(skey, true, &exists);
+    return exists;
 }
 
 bool AppConfig::isAppBlocked(const QString &name) const
@@ -85,64 +92,6 @@ QString AppConfig::getCachePath(QString subdir)
     return QString("%1/.cache/jamesdsp/%2").arg(QDir::homePath()).arg(subdir);
 }
 
-void AppConfig::setIrsPath(const QString &npath)
-{
-    _appconf->setValue("ConvolverDefaultPath", QVariant(QString("\"%1\"").arg(npath)));
-    save();
-}
-
-QString AppConfig::getIrsPath()
-{
-    QString irs_path = chopFirstLastChar(_appconf->getString("ConvolverDefaultPath", false));
-
-    if (irs_path.length() < 2)
-    {
-        return QString("%1/IRS").arg(QDir::homePath());
-    }
-
-    return irs_path;
-}
-
-void AppConfig::setDDCPath(const QString &npath)
-{
-    _appconf->setValue("VdcDefaultPath", QVariant(QString("\"%1\"").arg(npath)));
-    save();
-}
-
-QString AppConfig::getDDCPath()
-{
-    QString irs_path = chopFirstLastChar(_appconf->getString("VdcDefaultPath", false));
-
-    if (irs_path.length() < 2)
-    {
-        return QString("%1/DDC").arg(QDir::homePath());
-    }
-
-    return irs_path;
-}
-
-void AppConfig::setLiveprogPath(const QString &npath)
-{
-    _appconf->setValue("LiveprogDefaultPath", QVariant(QString("\"%1\"").arg(npath)));
-    save();
-}
-
-QString AppConfig::getLiveprogPath()
-{
-    QString absolute = QFileInfo(getDspConfPath()).absoluteDir().absolutePath();
-    QString lp_path  = chopFirstLastChar(_appconf->getString("LiveprogDefaultPath", false));
-
-    if (lp_path.length() < 2)
-    {
-        QDir(absolute).mkdir("liveprog");
-        QString defaultstr = QString("%1/liveprog").arg(absolute);
-        setLiveprogPath(defaultstr);
-        return defaultstr;
-    }
-
-    return lp_path;
-}
-
 void AppConfig::save()
 {
     auto file = QString("%1/.config/jamesdsp/application.conf").arg(QDir::homePath());
@@ -161,9 +110,9 @@ void AppConfig::load()
     }
 }
 
-QString AppConfig::getGraphicEQConfigFilePath()
+QString AppConfig::getGraphicEqStatePath()
 {
-    return pathAppend(QFileInfo(getDspConfPath()).absoluteDir().absolutePath(), "graphiceq.conf");
+    return getPath("graphiceq.conf");
 }
 
 void AppConfig::notify(const Key &key, const QVariant &value)
@@ -175,18 +124,6 @@ void AppConfig::notify(const Key &key, const QVariant &value)
     case ThemeColorsCustom:
     case ThemeColorsCustomWhiteIcons:
         emit themeChanged(key, value);
-        break;
-    case SpectrumEnabled:
-    case SpectrumBands:
-    case SpectrumGrid:
-    case SpectrumMinFreq:
-    case SpectrumMaxFreq:
-    case SpectrumMultiplier:
-    case SpectrumTheme:
-        emit spectrumChanged(false);
-        break;
-    case SpectrumRefresh:
-        emit spectrumChanged(true);
         break;
     default:
         break;
