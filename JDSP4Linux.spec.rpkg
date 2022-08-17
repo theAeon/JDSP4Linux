@@ -20,8 +20,6 @@ BuildRequires:  pipewire-devel
 BuildRequires:  make
 
 Requires:    pipewire >= 0.3
-Requires:    pipewire-libs
-Requires:    libarchive
     
 
 %description
