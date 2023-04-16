@@ -1,0 +1,31 @@
+@@ -119,7 +119,7 @@
+
+ # Now build it!
+ print "Creating RPM\n" unless $opts{quiet};
+-runx 'rpmbuild', '-ba', '--define', "_topdir $dir",
++runx 'rpmbuild', '-br', '--define', "_topdir $dir",
+     ( $opts{quiet} ? '--quiet' : ()),
+     ( $dist ? ('--define', "dist $dist") : ()),
+     ( map { ('--define', "$_ $opts{define}->{$_}") } keys %{ $opts{define} || {} }),
+@@ -129,11 +129,20 @@
+ $dir->subdir('RPMS')->recurse(callback => sub {
+     my $rpm = shift;
+     my $bn = $rpm->basename;
+-    return if $bn !~ /[.]rpm$/;
++    return if $bn !~ /rpm$/;
+     move $rpm, $bn;
+     print "* Copy $bn\n" unless $opts{quiet};
+ });
+
++$dir->subdir('SRPMS')->recurse(callback => sub {
++    my $rpm = shift;
++    my $bn = $rpm->basename;
++    return if $bn !~ /rpm$/;
++    move $rpm, $bn;
++    print "* Copy $bn\n" unless $opts{quiet};
++});
++
++
+ sub _pod2usage {
+     require Pod::Usage;
+     Pod::Usage::pod2usage(
