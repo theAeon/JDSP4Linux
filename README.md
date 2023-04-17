@@ -48,9 +48,9 @@ Linux port developed by <a href="https://github.com/thepbone">Tim Schneeberger (
 
 - Packages maintained by Andrew Robbins - [andrew@robbinsa.me](mailto:andrew@robbinsa.me)
 - CI/CD at Fedora's COPR.&nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;  &nbsp;[![Copr build status](https://copr.fedorainfracloud.org/coprs/arrobbins/JDSP4Linux/package/jamesdsp/status_image/last_build.png)](https://copr.fedorainfracloud.org/coprs/arrobbins/JDSP4Linux/package/jamesdsp/)
-- **PIPEWIRE ONLY** - Tested on Fedora 35. Built for Fedora 34/35/Rawhide and OpenSuSE Tumbleweed.
+- **PIPEWIRE ONLY** - Untested. Built for Fedora 36/37.
 ```
-yum copr enable arrobbins/JDSP4Linux && yum update && yum install jamesdsp
+yum copr enable arrobbins/JDSP4Linux && yum update && yum install JamesDSP
 ``` 
 
 
