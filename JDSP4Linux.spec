@@ -1,5 +1,5 @@
 Name:           JamesDSP
-Version:        2.5
+Version:        2.6
 Release:        1%{?dist}
 Source0:        JDSP4Linux-%{version}.tar.gz
 ExclusiveArch:  x86_64
