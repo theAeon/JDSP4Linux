@@ -29,7 +29,7 @@
 </p>
 
 <p align="center">
-Linux port developed by <a href="https://github.com/thepbone">Tim Schneeberger (@thepbone)</a> (<a href="https://t.me/thepbone">Telegram</a>)
+Linux port developed by <a href="https://github.com/thepbone">Tim Schneeberger (@thepbone)</a>
 <p/><p align="center">
 <a href="https://github.com/james34602/JamesDSPManager">JamesDSP</a> was initially published as an audio effects processor<br>for Android devices and is written by <a href="https://github.com/james34602">James Fung (@james34602)</a>.
 </p>
@@ -94,7 +94,7 @@ yum copr enable arrobbins/JDSP4Linux && yum update && yum install JamesDSP
 
 **Designed for use with PipeWire. PulseAudio is only supported for backward compatibility.**
 
-PipeWire has a much lower latency compared to PulseAudio when injecting audio effects processors into the audio graph. 
+PipeWire has a much lower latency compared to PulseAudio when injecting audio effects processors into the audio pipeline. 
 I'm currently not planning to add more advanced support for Pulseaudio clients. Features such as selective app exclusion, changing the target audio device, and similar features will only be available to PipeWire clients.
 
 ### Which one am I using?
@@ -119,15 +119,41 @@ Server Name: pulseaudio
 
 If you don't know which version fits your Linux setup, go to the [PipeWire vs PulseAudio section](#which-one-am-i-using) above.
 
+It is recommended to switch to PipeWire, if possible. JamesDSP's audio backend for PulseAudio is in maintance-mode; however, it will continue to receive UI-related feature updates.
+
+The installation instructions for the PulseAudio version have been moved to a separate file: [INSTALL_PULSE.md](INSTALL_PULSE.md).
+
+## Installation for PipeWire
+This section is dedicated to systems using PipeWire as the audio server. If you are still using PulseAudio, please go [here](INSTALL_PULSE.md).
+
+* [Flatpak](#flatpak)
 * [Arch Linux (AUR)](#arch)
 * [Fedora/openSUSE](#fedoraopensuse)
-* [Debian/Ubuntu (PPA)](#debianubuntu)
 * [Build from sources](#build-from-sources)
+
+### Flatpak
+
+Universal binary packages for all distros.
+
+The recommended **Pipewire version** is available for download on FlatHub: https://flathub.org/apps/me.timschneeberger.jdsp4linux
+```
+flatpak install me.timschneeberger.jdsp4linux
+```
+
+<a href='https://flathub.org/apps/me.timschneeberger.jdsp4linux'><img width='240' alt='Download on Flathub' src='https://dl.flathub.org/assets/badges/flathub-badge-en.png'/></a>
+
+
+If you are still using **PulseAudio**, you need to download the legacy package from my personal repository:
+```
+sudo flatpak remote-add --if-not-exists thepbones-repo https://raw.githubusercontent.com/ThePBone/flatpak-repo/main/thepbone.flatpakrepo
+flatpak install me.timschneeberger.jdsp4linux.pulse
+```
+
+> **Note**: Flatpaks are sandboxed. This application can only access `~/.var/app/me.timschneeberger.jdsp4linux/` by default.
 
 ### Arch
 [AUR packages](https://aur.archlinux.org/packages/?O=0&K=jamesdsp) are available:
 
-For **PipeWire clients** only:
 * Stable version
 
    ![AUR version](https://img.shields.io/aur/version/jamesdsp) ![AUR version](https://img.shields.io/aur/votes/jamesdsp) ![AUR version](https://img.shields.io/aur/maintainer/jamesdsp) ![AUR version](https://img.shields.io/aur/last-modified/jamesdsp)
@@ -142,110 +168,37 @@ For **PipeWire clients** only:
    yay -S jamesdsp-git
    ```
 
-For **PulseAudio clients** only:
-* Stable version
-
-   ![AUR version](https://img.shields.io/aur/version/jamesdsp-pulse) ![AUR version](https://img.shields.io/aur/votes/jamesdsp-pulse) ![AUR version](https://img.shields.io/aur/maintainer/jamesdsp-pulse) ![AUR version](https://img.shields.io/aur/last-modified/jamesdsp-pulse)
-   ```
-   yay -S jamesdsp-pulse
-   ```
-
-* Development version
-
-   ![AUR version](https://img.shields.io/aur/version/jamesdsp-pulse-git) ![AUR version](https://img.shields.io/aur/votes/jamesdsp-pulse-git) ![AUR version](https://img.shields.io/aur/maintainer/jamesdsp-pulse-git) ![AUR version](https://img.shields.io/aur/last-modified/jamesdsp-pulse-git)
-   ```
-   yay -S jamesdsp-pulse-git
-   ```
-   
 ### Fedora/openSUSE
 
 Package maintained by [@theAeon](https://github.com/theAeon) on [Fedora COPR](https://copr.fedorainfracloud.org/coprs/arrobbins/JDSP4Linux/).
 Built for Fedora 34/35/Rawhide and OpenSUSE Tumbleweed.
 
-For **PipeWire clients** only:
 ```
 yum copr enable arrobbins/JDSP4Linux && yum update && yum install jamesdsp
 ```
 
 If you are still using PulseAudio with your Fedora/openSUSE installation, refer to the '[Build from sources](#build-from-sources)' section below instead.
 
-### Debian/Ubuntu
-
-> **Warning**: The PPA repo is unmaintained and deprecated. At th moment, it is still being auto-updated by an automated GitHub CI workflow. I'm working on setting up flatpak packages as a more stable and universal alternative.
-
-##### Minimum system requirements:
-
-* Distro based on Debian 11 or later **OR**
-* Distro based on Ubuntu 21.10 or later
-
-If you need to install this app on an older distro, you need to compile it manually with GCC 11.0 or later.
-
-Add PPA Repo
-```bash
-sudo apt install -y curl
-# thepbone’s PPA Repository key
-curl -s --compressed "https://thepbone.github.io/PPA-Repository/KEY.gpg" -o thepbone_ppa.gpg
-
-cat thepbone_ppa.gpg | sudo gpg --dearmour -o /etc/apt/trusted.gpg.d/thepbone_ppa.gpg
-echo "deb [arch=amd64 signed-by=/etc/apt/trusted.gpg.d/thepbone_ppa.gpg] https://thepbone.github.io/PPA-Repository ./" > /etc/apt/sources.list.d/thepbone_ppa.list
-sudo apt update
-```
-Install from PPA
-
-For **PipeWire clients** only:
-```bash
-sudo apt install jamesdsp-pipewire
-```
-For **PulseAudio clients** only:
-```bash
-sudo apt install jamesdsp-pulse
-```
-[View PPA on GitHub](https://github.com/ThePBone/PPA-Repository)
-
-
 ### Build from sources
 
 #### Install dependencies
 
-*NOTE:* Only execute the line that applies to your system configuration. If your distro is not included here, you need to research which packages to install by yourself.
-
 **Debian/Ubuntu-based distros**
-
-Debian/Ubuntu + **PipeWire** clients only:
 
 ```bash
 sudo apt install build-essential libarchive-dev qtbase5-private-dev qtbase5-dev libqt5svg5-dev libglibmm-2.4-dev libglib2.0-dev libpipewire-0.3-dev 
 ```
 
-Debian/Ubuntu + **PulseAudio** clients only:
-
-```bash
-sudo apt install build-essential libarchive-dev qtbase5-private-dev qtbase5-dev libqt5svg5-dev libglibmm-2.4-dev libglib2.0-dev libpulse-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
-```
-**Fedora**
-
-Fedora 34 + **PipeWire** clients only:
+**Fedora 34**
 
 ```bash
 sudo dnf install libarchive-devel qt5-qtbase-devel qt5-qtbase-private-devel qt5-qtsvg-devel glibmm24-devel glib2-devel pipewire-devel
 ```
-Fedora 34 + **PulseAudio** clients only:
 
-```bash
-sudo dnf install libarchive-devel qt5-qtbase-devel qt5-qtbase-private-devel qt5-qtsvg-devel glibmm24-devel glib2-devel pulseaudio-libs-devel gstreamer1-devel gstreamer1-plugins-base-devel 
-```
 **Arch Linux**
-
-Arch Linux + **PipeWire** clients only:
 
 ```bash
 sudo pacman -S gcc make pkgconfig libarchive qt5-base qt5-svg glib2 glibmm pipewire
-```
-
-Arch Linux + **PulseAudio** clients only:
-
-```
-sudo pacman -S gcc make pkgconfig libarchive qt5-base qt5-svg glib2 glibmm libpulse gst-plugins-good gstreamer 
 ```
 
 #### Build application
@@ -262,18 +215,8 @@ Prepare build environment
 cd JDSP4Linux
 mkdir build
 cd build
-```
-
-Compile application - **PipeWire** clients only:
-
-```bash
+# Compile app
 qmake ../JDSP4Linux.pro
-make -j4
-```
-Compile application - **PulseAudio** clients only:
-
-```bash
-qmake ../JDSP4Linux.pro "CONFIG += USE_PULSEAUDIO"
 make -j4
 ```
 
@@ -354,9 +297,13 @@ If you want to test it out, you can use an app like [D-Feet](https://wiki.gnome.
 The D-Bus introspection XML is available here: https://github.com/Audio4Linux/JDSP4Linux/blob/master/src/utils/dbus/manifest.xml.
 
 ## Troubleshooting
-* Your CPU may be too slow to process the audio sample in time; try to disable some effects (especially resource-hungry ones like the convolver)
-* Set JamesDSP's process to real-time or high priority using a task manager of your choice
-* [Pipewire] Try out the workaround mentioned in [issue #47](https://github.com/Audio4Linux/JDSP4Linux/issues/47)
+* My volume control not working anymore
+  * Don't set the virtual JamesDSP device as the default audio output device. The virtual device has no audio volume controls and should never be used directly. Please set your actual speakers/headphones as the default output device instead.
+
+* Crackling audio
+  * Your CPU may be too slow to process the audio sample in time; try to disable some effects (especially resource-hungry ones like the convolver)
+  * Set JamesDSP's process to real-time or high priority using a task manager of your choice
+  * [Pipewire] Try out the workaround mentioned in [issue #47](https://github.com/Audio4Linux/JDSP4Linux/issues/47)
 
 ## Screenshots
 
@@ -384,7 +331,7 @@ The D-Bus introspection XML is available here: https://github.com/Audio4Linux/JD
         <br />
         <sub><b>Tim Schneeberger (ThePBone)</b></sub></a>
       <br />
-      <sub><b>6808 words</b></sub>
+      <sub><b>7094 words</b></sub>
     </td>
     <td align="center" valign="top">
       <a href="https://crowdin.com/profile/Kazevic"><img alt="logo" style="width: 64px" src="https://crowdin-static.downloads.crowdin.com/avatar/15680393/medium/4393ae8969da30fc9475409e95e74867.png" />
@@ -401,12 +348,42 @@ The D-Bus introspection XML is available here: https://github.com/Audio4Linux/JD
       <sub><b>3152 words</b></sub>
     </td>
     <td align="center" valign="top">
+      <a href="https://crowdin.com/profile/KatieFrogs"><img alt="logo" style="width: 64px" src="https://crowdin-static.downloads.crowdin.com/avatar/14450708/medium/bb568293d8b26daa3f7f323dbc9d69d0.png" />
+        <br />
+        <sub><b>Katie Frogs (KatieFrogs)</b></sub></a>
+      <br />
+      <sub><b>2670 words</b></sub>
+    </td>
+    <td align="center" valign="top">
       <a href="https://crowdin.com/profile/mefsaal"><img alt="logo" style="width: 64px" src="https://crowdin-static.downloads.crowdin.com/avatar/13221907/medium/c0b751a37f076028f7271b00392736aa.jpg" />
         <br />
         <sub><b>Gabriel Cabrera Davila (mefsaal)</b></sub></a>
       <br />
       <sub><b>652 words</b></sub>
     </td>
+    <td align="center" valign="top">
+      <a href="https://crowdin.com/profile/seqfault"><img alt="logo" style="width: 64px" src="https://crowdin-static.downloads.crowdin.com/avatar/15878639/medium/bf4af8eeefcd4c065fd867a7ad16994b.jpeg" />
+        <br />
+        <sub><b>NullPointerException (seqfault)</b></sub></a>
+      <br />
+      <sub><b>1106 words</b></sub>
+    </td>
+    <td align="center" valign="top">
+      <a href="https://crowdin.com/profile/mariachini"><img alt="logo" style="width: 64px" src="https://crowdin-static.downloads.crowdin.com/avatar/13113640/medium/99ff648dd8f28efebdce9713cee1b9c3.png" />
+        <br />
+        <sub><b>mariachini</b></sub></a>
+      <br />
+      <sub><b>373 words</b></sub>
+    </td>
+    <td align="center" valign="top">
+      <a href="https://crowdin.com/profile/zhanghua000"><img alt="logo" style="width: 64px" src="https://crowdin-static.downloads.crowdin.com/avatar/15906451/medium/db06f53e9b83801ec99389ab759b1e48.png" />
+        <br />
+        <sub><b>Noob Zhang (zhanghua000)</b></sub></a>
+      <br />
+      <sub><b>240 words</b></sub>
+    </td>
+  </tr>
+  <tr>
     <td align="center" valign="top">
       <a href="https://crowdin.com/profile/so1ar"><img alt="logo" style="width: 64px" src="https://i2.wp.com/crowdin.com/images/user-picture.png?ssl=1" />
         <br />
@@ -415,11 +392,11 @@ The D-Bus introspection XML is available here: https://github.com/Audio4Linux/JD
       <sub><b>126 words</b></sub>
     </td>
     <td align="center" valign="top">
-      <a href="https://crowdin.com/profile/mariachini"><img alt="logo" style="width: 64px" src="https://crowdin-static.downloads.crowdin.com/avatar/13113640/medium/99ff648dd8f28efebdce9713cee1b9c3.png" />
+      <a href="https://crowdin.com/profile/etiennec78"><img alt="logo" style="width: 64px" src="https://crowdin-static.downloads.crowdin.com/avatar/15912311/medium/49bacd7fcfc807ea0c5f97127af5bb26.jpeg" />
         <br />
-        <sub><b>mariachini</b></sub></a>
+        <sub><b>etiennec79 (etiennec78)</b></sub></a>
       <br />
-      <sub><b>95 words</b></sub>
+      <sub><b>114 words</b></sub>
     </td>
     <td align="center" valign="top">
       <a href="https://crowdin.com/profile/arifesat"><img alt="logo" style="width: 64px" src="https://crowdin-static.downloads.crowdin.com/avatar/15670651/medium/46177c3d13c90ed767700bb49413107f.jpeg" />
@@ -435,8 +412,6 @@ The D-Bus introspection XML is available here: https://github.com/Audio4Linux/JD
       <br />
       <sub><b>15 words</b></sub>
     </td>
-  </tr>
-  <tr>
     <td align="center" valign="top">
       <a href="https://crowdin.com/profile/deathrobert2010"><img alt="logo" style="width: 64px" src="https://crowdin-static.downloads.crowdin.com/avatar/13559998/medium/429e149d92ed6c461f601e7d30d280df.jpg" />
         <br />
@@ -455,6 +430,13 @@ The D-Bus introspection XML is available here: https://github.com/Audio4Linux/JD
       <a href="https://crowdin.com/profile/dev_trace"><img alt="logo" style="width: 64px" src="https://crowdin-static.downloads.crowdin.com/avatar/15729737/medium/f515d9ef1eeb393759e7180bc700afc2_default.png" />
         <br />
         <sub><b>dev_trace</b></sub></a>
+      <br />
+      <sub><b>2 words</b></sub>
+    </td>
+    <td align="center" valign="top">
+      <a href="https://crowdin.com/profile/alfredo30.herz"><img alt="logo" style="width: 64px" src="https://crowdin-static.downloads.crowdin.com/avatar/15856703/medium/324d9cf3874ae10cd3efa5ace74a4c89.png" />
+        <br />
+        <sub><b>Alfredo Hernandez (alfredo30.herz)</b></sub></a>
       <br />
       <sub><b>2 words</b></sub>
     </td>
