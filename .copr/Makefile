@@ -6,12 +6,12 @@ ZYP := $(shell command -v zypper 2> /dev/null)
 
 srpm:
 ifdef DNF
-	dnf -y install qt5-qtbase-devel qt5-qtbase-private-devel qt5-qtsvg-devel gcc-c++ glib2-devel glibmm24-devel \
+	dnf -y install qt6-qtbase-devel qt6-qtbase-private-devel qt6-qtsvg-devel gcc-c++ glib2-devel glibmm24-devel \
 	libarchive-devel pipewire-devel git python3-pip perl-rpm-build-perl perl-IPC-System-Simple perl-Path-Class \
 	perl-Test-Pod perl-Module-Build
 endif
 ifdef ZYP
-	zypper install -y libqt5-qtbase-devel libqt5-qtbase-private-devel libqt5-qtsvg-devel gcc-c++ glib2-devel \
+	zypper install -y libqt6-qtbase-devel libqt6-qtbase-private-devel libqt6-qtsvg-devel gcc-c++ glib2-devel \
 	glibmm24-devel libarchive-devel pipewire-devel git python310-pip rpm-build-perl perl-IPC-System-Simple \
 	perl-Path-Class perl-Test-Pod perl-Module-Build
 endif

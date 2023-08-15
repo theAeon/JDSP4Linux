@@ -1,5 +1,5 @@
 Name:           JamesDSP
-Version:        2.6
+Version:        2.7.0
 Release:        1%{?dist}
 Source0:        JDSP4Linux-%{version}.tar.gz
 ExclusiveArch:  x86_64
@@ -7,9 +7,9 @@ Summary:        An audio effect processor for PipeWire clients
 License:        GPLv3
 URL:            https://github.com/theAeon/JDSP4Linux/
 BuildRequires:  libarchive-devel
-BuildRequires:  (qt5-qtbase-devel >= 5.12.8 or libqt5-qtbase-devel >= 5.12.8)
-BuildRequires:  (qt5-qtbase-private-devel or libqt5-qtbase-private-headers-devel)
-BuildRequires:  (qt5-qtsvg-devel >= 5.12.8 or libqt5-qtsvg-devel >= 5.12.8)
+BuildRequires:  (qt6-qtbase-devel or libqt6-qtbase-devel)
+BuildRequires:  (qt6-qtbase-private-devel or libqt6-qtbase-private-headers-devel)
+BuildRequires:  (qt6-qtsvg-devel or libqt6-qtsvg-devel)
 BuildRequires:  gcc-c++
 BuildRequires:  glibmm24-devel
 BuildRequires:  glib2-devel
