@@ -30,7 +30,7 @@ James DSP for Linux
 %build
 mkdir build
 cd build
-qmake-qt5 ../JDSP4Linux.pro
+qmake-qt6 ../JDSP4Linux.pro
 make
 
 %install
