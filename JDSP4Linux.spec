@@ -26,12 +26,11 @@ James DSP for Linux
 
 %prep
 %setup -n JDSP4Linux-%{version}
+%global _qt6_build_tool make
 
 %build
-mkdir build
-cd build
-qmake-qt6 ../JDSP4Linux.pro
-make
+%qmake_qt6 JDSP4Linux.pro
+%make_build
 
 %install
 install -D -m 755 build/src/jamesdsp %{buildroot}/%{_bindir}/jamesdsp
