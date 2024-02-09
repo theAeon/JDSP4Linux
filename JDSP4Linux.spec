@@ -33,7 +33,7 @@ James DSP for Linux
 %make_build
 
 %install
-install -D -m 755 build/src/jamesdsp %{buildroot}/%{_bindir}/jamesdsp
+install -D -m 755 src/jamesdsp %{buildroot}/%{_bindir}/jamesdsp
 install -D -m 644 resources/icons/icon.png %{buildroot}/%{_datadir}/pixmaps/jamesdsp.png
 install -D -m 644 resources/icons/icon.svg %{buildroot}/%{_datadir}/hicolor/scalable/apps/jamesdsp.svg
 install -D -m 755 meta/jamesdsp.desktop %{buildroot}/%{_datadir}/applications/jamesdsp.desktop
