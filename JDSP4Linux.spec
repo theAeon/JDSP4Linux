@@ -16,7 +16,7 @@ BuildRequires:  glib2-devel
 BuildRequires:  pipewire-devel
 BuildRequires:  make
 BuildRequires:  git
-
+BuildRequires:  libxkbcommon-devel
 
 Requires:    pipewire >= 0.3.19
 
