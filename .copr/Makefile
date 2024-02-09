@@ -8,12 +8,12 @@ srpm:
 ifdef DNF
 	dnf -y install qt6-qtbase-devel qt6-qtbase-private-devel qt6-qtsvg-devel gcc-c++ glib2-devel glibmm24-devel \
 	libarchive-devel pipewire-devel git python3-pip perl-rpm-build-perl perl-IPC-System-Simple perl-Path-Class \
-	perl-Test-Pod perl-Module-Build
+	perl-Test-Pod perl-Module-Build libxkbcommon-devel
 endif
 ifdef ZYP
 	zypper install -y libqt6-qtbase-devel libqt6-qtbase-private-devel libqt6-qtsvg-devel gcc-c++ glib2-devel \
 	glibmm24-devel libarchive-devel pipewire-devel git python310-pip rpm-build-perl perl-IPC-System-Simple \
-	perl-Path-Class perl-Test-Pod perl-Module-Build
+	perl-Path-Class perl-Test-Pod perl-Module-Build libxkbcommon-devel
 endif
 	git submodule update
 	git config --global --add safe.directory "*"

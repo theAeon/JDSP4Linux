@@ -16,7 +16,7 @@ BuildRequires:  glib2-devel
 BuildRequires:  pipewire-devel
 BuildRequires:  make
 BuildRequires:  git
-
+BuildRequires:  libxkbcommon-devel
 
 Requires:    pipewire >= 0.3.19
 
@@ -26,15 +26,14 @@ James DSP for Linux
 
 %prep
 %setup -n JDSP4Linux-%{version}
+%global _qt6_build_tool make
 
 %build
-mkdir build
-cd build
-qmake-qt5 ../JDSP4Linux.pro
-make
+%qmake_qt6 JDSP4Linux.pro
+%make_build
 
 %install
-install -D -m 755 build/src/jamesdsp %{buildroot}/%{_bindir}/jamesdsp
+install -D -m 755 src/jamesdsp %{buildroot}/%{_bindir}/jamesdsp
 install -D -m 644 resources/icons/icon.png %{buildroot}/%{_datadir}/pixmaps/jamesdsp.png
 install -D -m 644 resources/icons/icon.svg %{buildroot}/%{_datadir}/hicolor/scalable/apps/jamesdsp.svg
 install -D -m 755 meta/jamesdsp.desktop %{buildroot}/%{_datadir}/applications/jamesdsp.desktop
