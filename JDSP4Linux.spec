@@ -6,9 +6,9 @@ Summary:        An audio effect processor for PipeWire clients
 License:        GPLv3
 URL:            https://github.com/theAeon/JDSP4Linux/
 BuildRequires:  libarchive-devel
-BuildRequires:  (qt6-qtbase-devel or libqt6-qtbase-devel)
-BuildRequires:  (qt6-qtbase-private-devel or libqt6-qtbase-private-headers-devel)
-BuildRequires:  (qt6-qtsvg-devel or libqt6-qtsvg-devel)
+BuildRequires:  (qt6-qtbase-devel or qt6-base-devel)
+BuildRequires:  (qt6-qtbase-private-devel or qt6-base-private-devel)
+BuildRequires:  (qt6-qtsvg-devel or qt6-svg-devel)
 BuildRequires:  gcc-c++
 BuildRequires:  glibmm24-devel
 BuildRequires:  glib2-devel
