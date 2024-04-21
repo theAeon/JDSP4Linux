@@ -28,10 +28,10 @@ James DSP for Linux
 %global _qt6_build_tool make
 
 %build
-%if 0%{?fedora}
+%if 0%{?fedora_version}
 %qmake_qt6 JDSP4Linux.pro
 %endif
-%if 0%{?suse}
+%if 0%{?suse_version}
 %qmake6 JDSP4Linux.pro
 %endif
 
