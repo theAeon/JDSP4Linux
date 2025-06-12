@@ -1,6 +1,6 @@
 Name:           JamesDSP
 Version:        2.7.0
-Release:        2%{?dist}
+Release:        4%{?dist}
 Source0:        JDSP4Linux-%{version}.tar.gz
 Summary:        An audio effect processor for PipeWire clients
 License:        GPLv3
